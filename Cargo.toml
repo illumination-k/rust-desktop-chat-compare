@@ -5,7 +5,7 @@ members = [
   "apps/egui",
   "apps/iced",
   "apps/slint",
-  # "apps/dioxus",
+  "apps/dioxus",
   # "apps/tauri/src-tauri",
 ]
 
