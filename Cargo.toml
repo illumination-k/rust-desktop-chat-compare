@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-  "crates/*",
+  "apps/dioxus",
   "apps/egui",
   "apps/iced",
   "apps/slint",
-  "apps/dioxus",
-  # "apps/tauri/src-tauri",
+  "apps/tauri/src-tauri",
+  "crates/*",
 ]
 
 [workspace.package]
@@ -41,3 +41,7 @@ expect_used = "deny"
 [profile.release]
 strip = true
 lto = "thin"
+
+# Five GUI stacks make full debug info huge (tens of GB); keep it for our crates only.
+[profile.dev.package."*"]
+debug = false

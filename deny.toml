@@ -3,22 +3,35 @@ allow = [
   "MIT",
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
   "BSD-3-Clause",
   "BSL-1.0",
   "CC0-1.0",
   "CDLA-Permissive-2.0",
   "ISC",
   "MPL-2.0",
+  "NCSA",
+  "OFL-1.1",
+  "Ubuntu-font-1.0",
+  "Unlicense",
   "Unicode-3.0",
   "Zlib",
+  # Slint crates are "GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR ...";
+  # this comparison uses Slint under the royalty-free desktop license.
+  "LicenseRef-Slint-Royalty-free-2.0",
 ]
 confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace-internal `path` dependencies (chat-core) have no version.
+allow-wildcard-paths = true
 
 [advisories]
+# GUI frameworks pull in unmaintained crates (unic-*, ttf-parser, paste, ...) with
+# no upgrade path; only flag unmaintained crates we depend on directly.
+unmaintained = "workspace"
 ignore = []
 
 [sources]

@@ -5,5 +5,5 @@ export default defineConfig({
     correctness: "error",
     suspicious: "warn",
   },
-  ignorePatterns: ["dist"],
+  ignorePatterns: ["**/dist", "target", "apps/tauri/src-tauri/gen"],
 });

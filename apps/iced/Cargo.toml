@@ -1,9 +1,10 @@
 [package]
 name = "chat-iced"
-description = "AI chat app built with iced"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
+description = "AI chat app built with iced"
 
 [dependencies]
 chat-core.workspace = true

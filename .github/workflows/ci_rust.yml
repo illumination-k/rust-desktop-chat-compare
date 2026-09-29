@@ -38,6 +38,9 @@ jobs:
           # Avoid GitHub API rate limits for aqua and cargo-binstall
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
+      - name: Install GUI system dependencies
+        run: scripts/install-linux-deps.sh
+
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Build

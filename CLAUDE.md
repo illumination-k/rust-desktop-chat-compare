@@ -98,12 +98,14 @@ docs/comparison.md       # 比較表と所感
 ### 比較観点（docs/comparison.md）
 
 計測値:
+
 - リリースビルドのバイナリ / インストーラサイズ
 - 起動時間（コールド / ウォーム）、アイドル時と長い会話（1,000 メッセージ）表示時のメモリ
 - ストリーミング中の CPU 使用率・描画のカクつき
 - clean build / incremental build 時間
 
 定性評価:
+
 - 状態管理とストリーミング実装のしやすさ、コード量（`tokei`）
 - テキスト入力・IME（日本語入力）・選択/コピー・スクロールの品質
 - Markdown / コードブロック表示の手間、テーマ・見た目の自由度
@@ -113,11 +115,9 @@ docs/comparison.md       # 比較表と所感
 
 ## Notes
 
-- テンプレート由来の初期配置は目標構成と異なるので、初期セットアップで移す:
-  - rust テンプレートの `crates/rust-desktop-chat-compare/` → `crates/chat-core/` にリネームし、
-    workspace の members に `crates/*` と `apps/*`（Tauri は `apps/tauri/src-tauri`）を追加
-  - ts テンプレートのルート `src/` は `apps/tauri/` のフロントに置き換え、
-    `pnpm-workspace.yaml` に `apps/tauri` を追加する
+- テンプレートからの初期移行（`crates/chat-core` へのリネーム、workspace members、`apps/tauri` の pnpm workspace 化）は完了済み
+- 全アプリが 1 つの Cargo workspace / lockfile を共有するため、`webkit2gtk-sys` は 1 バージョンしか共存できない。
+  dioxus-desktop が要求する wry に合わせて Tauri のバージョンを固定している（`apps/tauri/src-tauri/Cargo.toml` 参照）
 - 1 フレームワークずつ実装し、同じ仕様を満たしたら比較表を更新する。
   実装順の目安: egui → Tauri → iced → Slint → Dioxus
-- Linux の CI では Tauri / 各 GUI crate のシステム依存（webkit2gtk, xkbcommon 等）のインストールが必要
+- Linux の CI では Tauri / 各 GUI crate のシステム依存（webkit2gtk, xkbcommon 等）のインストールが必要（`scripts/install-linux-deps.sh`）

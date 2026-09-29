@@ -4,14 +4,15 @@ pnpm = "11.22.0"
 
 [tasks."fmt:ts"]
 description = "Format with oxfmt"
-run = "pnpm exec oxfmt --write src"
+run = "pnpm exec oxfmt --write apps/tauri/src apps/tauri/vite.config.ts"
 
 [tasks."lint:ts"]
 description = "Lint, fmt check, type-check, and audit TypeScript"
 run = [
   "pnpm exec oxlint -c oxlint.config.ts .",
-  "pnpm exec oxfmt --check src",
+  "pnpm exec oxfmt --check apps/tauri/src apps/tauri/vite.config.ts",
   "pnpm exec tsc --noEmit",
+  "pnpm exec tsc --noEmit -p apps/tauri",
   "pnpm audit",
 ]
 

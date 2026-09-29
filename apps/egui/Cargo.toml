@@ -1,9 +1,10 @@
 [package]
 name = "chat-egui"
-description = "AI chat app built with egui (eframe)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
+description = "AI chat app built with egui (eframe)"
 
 [dependencies]
 chat-core.workspace = true

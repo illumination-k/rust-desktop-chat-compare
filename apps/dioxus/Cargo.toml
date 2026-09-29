@@ -1,9 +1,10 @@
 [package]
 name = "chat-dioxus"
-description = "AI chat app built with Dioxus (desktop)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
+description = "AI chat app built with Dioxus (desktop)"
 
 [dependencies]
 chat-core.workspace = true

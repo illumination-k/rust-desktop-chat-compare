@@ -1,10 +1,11 @@
 [package]
 name = "chat-slint"
-description = "AI chat app built with Slint"
 version.workspace = true
+build = "build.rs"
 edition.workspace = true
 license.workspace = true
-build = "build.rs"
+publish = false
+description = "AI chat app built with Slint"
 
 [dependencies]
 chat-core.workspace = true

@@ -1,9 +1,10 @@
 [package]
 name = "chat-core"
-description = "UI-independent chat logic shared by every desktop app in this comparison"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
+description = "UI-independent chat logic shared by every desktop app in this comparison"
 
 [dependencies]
 directories.workspace = true

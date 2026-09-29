@@ -215,19 +215,20 @@ impl ChatApp {
         ui.horizontal(|ui| {
             let streaming = self.streaming.is_some();
             let button_width = 80.0;
+            let id = egui::Id::new("composer");
+            // Consume plain Enter before the editor sees it, so it sends instead of
+            // inserting a newline (Shift+Enter still reaches the editor).
+            let enter = ui.memory(|m| m.has_focus(id))
+                // `consume_key` ignores Shift, so check the modifiers explicitly.
+                && ui.input_mut(|i| {
+                    i.modifiers.is_none() && i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                });
             let editor = egui::TextEdit::multiline(&mut self.input)
+                .id(id)
                 .hint_text("Message… (Enter to send, Shift+Enter for newline)")
                 .desired_rows(3)
                 .desired_width(ui.available_width() - button_width - 8.0);
             let response = ui.add(editor);
-            let enter = response.has_focus()
-                && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
-            if enter {
-                // The multiline editor already inserted a newline for this Enter.
-                if self.input.ends_with('\n') {
-                    self.input.pop();
-                }
-            }
             if streaming {
                 if ui
                     .add_sized([button_width, 32.0], egui::Button::new("⏹ Stop"))

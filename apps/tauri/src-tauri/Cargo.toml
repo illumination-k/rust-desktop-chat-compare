@@ -1,0 +1,28 @@
+[package]
+name = "chat-tauri"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "AI chat app built with Tauri v2"
+
+# Version pins: every app shares one workspace lockfile, and `webkit2gtk-sys`
+# (`links = "web_kit2"`) may appear only once. dioxus-desktop 0.7 needs wry 0.53,
+# which caps Tauri at 2.9. Tauri's internal crates must stay on matching minors,
+# so they are pinned here too (otherwise `cargo update` mixes incompatible ones).
+[build-dependencies]
+tauri-build = { version = "~2.5", features = [] }
+
+[dependencies]
+chat-core.workspace = true
+serde.workspace = true
+tauri = { version = "~2.9", features = [] }
+tauri-codegen = "~2.5"
+tauri-macros = "~2.5"
+tauri-runtime = "~2.9"
+tauri-utils = "~2.8"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
