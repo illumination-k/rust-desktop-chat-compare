@@ -71,12 +71,15 @@ Rust のデスクトップ GUI フレームワークで同じ「AI チャット�
 - Markdown 表示（最低限: 見出し・リスト・コードブロック）
 - 会話履歴のローカル永続化（JSON、OS 標準のデータディレクトリ）
 - 設定画面: API キー・モデル・system prompt
+- MCP Apps（SEP-1865）の View をツール結果として会話内に表示する。ホスト側のプロトコルは `chat_core::mcp_app`、
+  ツールはモックの MCP サーバが提供する。ネイティブ系は子 WebView、WebView 系は sandbox 付きの iframe で描画する
 - API キーは OS キーチェーン（`keyring` crate）に保存し、平文でファイルに書かない
 
 ## Architecture
 
 ```
 crates/chat-core/        # UI 非依存のロジック（全アプリ共通）
+crates/app-webview/      # MCP App をネイティブ UI に子 WebView (wry) で埋め込む（egui / iced / Slint 用）
 apps/tauri/              # Tauri v2: src-tauri/ (Rust) + フロント (TS, pnpm workspace)
 apps/egui/               # eframe
 apps/iced/               # iced

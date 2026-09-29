@@ -9,6 +9,7 @@ description = "AI chat app built with Dioxus (desktop)"
 [dependencies]
 chat-core.workspace = true
 dioxus = { version = "0.7", default-features = false, features = ["desktop", "lib", "launch"] }
+serde_json.workspace = true
 tracing-subscriber.workspace = true
 
 [lints]

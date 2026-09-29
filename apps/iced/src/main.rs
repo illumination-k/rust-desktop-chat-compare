@@ -2,26 +2,41 @@
 
 mod markdown;
 
+use std::collections::HashMap;
+use std::time::Duration;
+
+use app_webview::{AppWebView, Bounds, ParentWindow};
 use chat_core::markdown::Block;
+use chat_core::mcp_app::{self, AppHost, HostEvent};
 use chat_core::stream::Canceller;
 use chat_core::{ApiKeyStore, ChatService, ProviderKind, Role, Settings, StreamEvent};
 use iced::futures::stream;
 use iced::keyboard::{Key, key::Named};
+use iced::widget::selector::{self, Candidate};
 use iced::widget::{
-    button, column, container, pick_list, row, rule, scrollable, space, text, text_editor,
+    self, button, column, container, pick_list, row, rule, scrollable, space, text, text_editor,
     text_input,
 };
-use iced::{Element, Fill, Length, Task, Theme, clipboard};
+use iced::{Element, Fill, Length, Rectangle, Subscription, Task, Theme, clipboard, time, window};
+
+/// Widget id of the message list; its visible bounds clip the MCP App webviews.
+const MESSAGES_ID: &str = "messages";
 
 fn main() -> iced::Result {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    iced::application(ChatApp::boot, ChatApp::update, ChatApp::view)
-        .title("Chat (iced)")
-        .theme(Theme::Dark)
-        .window_size((1000.0, 700.0))
-        .run()
+    let webviews = app_webview::init();
+    iced::application(
+        move || ChatApp::boot(webviews),
+        ChatApp::update,
+        ChatApp::view,
+    )
+    .subscription(ChatApp::subscription)
+    .title("Chat (iced)")
+    .theme(Theme::Dark)
+    .window_size((1000.0, 700.0))
+    .run()
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +52,11 @@ enum Message {
     DismissError,
     OpenSettings,
     Settings(SettingsMessage),
+    WindowReady(Option<ParentWindow>),
+    /// Pumps the webviews and re-places them (only while MCP App views exist).
+    Tick,
+    /// Visible bounds of the MCP App placeholders; the key `""` is the message list.
+    AppBounds(Vec<(String, Option<Rectangle>)>),
 }
 
 #[derive(Debug, Clone)]
@@ -65,8 +85,22 @@ struct Streaming {
     canceller: Canceller,
 }
 
+/// MCP App views (child webviews) of the active conversation, keyed by
+/// `conversation id:message index` (also the placeholder's widget id).
+struct AppViews {
+    supported: bool,
+    parent: Option<ParentWindow>,
+    views: HashMap<String, AppView>,
+}
+
+struct AppView {
+    webview: AppWebView,
+    height: f32,
+}
+
 struct ChatApp {
     service: Option<ChatService>,
+    apps: AppViews,
     composer: text_editor::Content,
     streaming: Option<Streaming>,
     draft: Option<SettingsDraft>,
@@ -76,13 +110,18 @@ struct ChatApp {
 }
 
 impl ChatApp {
-    fn boot() -> Self {
+    fn boot(webviews: bool) -> (Self, Task<Message>) {
         let (service, error) = match ChatService::load() {
             Ok(service) => (Some(service), None),
             Err(e) => (None, Some(e.to_string())),
         };
         let mut app = Self {
             service,
+            apps: AppViews {
+                supported: webviews,
+                parent: None,
+                views: HashMap::new(),
+            },
             composer: text_editor::Content::new(),
             streaming: None,
             draft: None,
@@ -90,7 +129,120 @@ impl ChatApp {
             blocks: Vec::new(),
         };
         app.reparse();
-        app
+        let parent = window::oldest()
+            .and_then(|id| window::run(id, |w| ParentWindow::of(w)))
+            .map(Message::WindowReady);
+        (app, parent)
+    }
+
+    /// Keys of the MCP App views the active conversation shows.
+    fn app_keys(&self) -> Vec<String> {
+        let Some(conversation) = self.service.as_ref().and_then(|s| s.workspace.active()) else {
+            return Vec::new();
+        };
+        conversation
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.app.is_some())
+            .map(|(i, _)| format!("{}:{i}", conversation.id))
+            .collect()
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        if self.apps.views.is_empty() && self.app_keys().is_empty() {
+            Subscription::none()
+        } else {
+            // Webview events only arrive while the GTK loop is pumped, so keep ticking.
+            time::every(Duration::from_millis(16)).map(|_| Message::Tick)
+        }
+    }
+
+    /// Pumps the webviews, creates/drops them to match the conversation and
+    /// asks for the placeholders' bounds.
+    fn tick(&mut self) -> Task<Message> {
+        app_webview::pump_platform();
+        let mut send = None;
+        for view in self.apps.views.values_mut() {
+            for event in view.webview.pump() {
+                match event {
+                    HostEvent::Resize(height) => view.height = height as f32,
+                    HostEvent::SendMessage(text) => send = Some(text),
+                    HostEvent::OpenLink(url) => mcp_app::open_link(&url),
+                }
+            }
+        }
+        let keys = self.app_keys();
+        self.apps.views.retain(|key, _| keys.contains(key));
+        if let (true, Some(parent), Some(service)) =
+            (self.apps.supported, self.apps.parent, &self.service)
+        {
+            for key in &keys {
+                if self.apps.views.contains_key(key) {
+                    continue;
+                }
+                let Some(host) = app_host(service, key) else {
+                    continue;
+                };
+                match AppWebView::new(&parent, host, || {}) {
+                    Ok(webview) => {
+                        let height = mcp_app::INITIAL_HEIGHT as f32;
+                        self.apps
+                            .views
+                            .insert(key.clone(), AppView { webview, height });
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to create MCP App view: {e}"));
+                        self.apps.supported = false;
+                    }
+                }
+            }
+        }
+        let mut targets: Vec<(String, widget::Id)> = keys
+            .into_iter()
+            .map(|k| (k.clone(), widget::Id::from(k)))
+            .collect();
+        targets.push((String::new(), widget::Id::from(MESSAGES_ID)));
+        let bounds = selector::find_all(move |candidate: Candidate<'_>| {
+            let id = candidate.id()?;
+            let (key, _) = targets.iter().find(|(_, target)| target == id)?;
+            Some((key.clone(), candidate.visible_bounds()))
+        })
+        .map(Message::AppBounds);
+        match send {
+            Some(text) => {
+                self.composer = text_editor::Content::with_text(&text);
+                Task::batch([bounds, self.update(Message::Send)])
+            }
+            None => bounds,
+        }
+    }
+
+    /// Lays the webviews over their placeholders, cut to the message list.
+    fn place_apps(&mut self, bounds: &[(String, Option<Rectangle>)]) {
+        let visible = |key: &str| bounds.iter().find(|(k, _)| k == key).and_then(|(_, b)| *b);
+        let viewport = visible("").filter(|_| self.draft.is_none());
+        for (key, view) in &mut self.apps.views {
+            let (Some(viewport), Some(shown)) = (viewport, visible(key)) else {
+                view.webview.hide();
+                continue;
+            };
+            // Only the visible part is known; rebuild the full placeholder from its height.
+            let height = view.height.max(shown.height);
+            let y = if shown.height < height && shown.y <= viewport.y + 0.5 {
+                shown.y + shown.height - height
+            } else {
+                shown.y
+            };
+            let bounds = |r: Rectangle| Bounds {
+                x: f64::from(r.x),
+                y: f64::from(r.y),
+                width: f64::from(r.width),
+                height: f64::from(r.height),
+            };
+            let placeholder = Rectangle { y, height, ..shown };
+            view.webview.place(bounds(placeholder), bounds(viewport));
+        }
     }
 
     fn reparse(&mut self) {
@@ -179,6 +331,7 @@ impl ChatApp {
                 };
                 match event {
                     StreamEvent::Delta(delta) => service.workspace.append_delta(&id, &delta),
+                    StreamEvent::ToolUse(call) => service.workspace.record_tool_use(&id, &call),
                     StreamEvent::Finished(outcome) => {
                         if let Err(e) = service.workspace.finish_turn(&id, &outcome) {
                             self.error = Some(e.to_string());
@@ -201,6 +354,9 @@ impl ChatApp {
                 });
             }
             Message::Settings(message) => self.update_settings(message),
+            Message::WindowReady(parent) => self.apps.parent = parent,
+            Message::Tick => return self.tick(),
+            Message::AppBounds(bounds) => self.place_apps(&bounds),
         }
         Task::none()
     }
@@ -282,12 +438,17 @@ impl ChatApp {
             .messages
             .iter()
             .zip(&self.blocks)
-            .map(|(message, blocks)| {
+            .enumerate()
+            .map(|(index, (message, blocks))| {
                 let (name, body): (&str, Element<'_, Message>) = match message.role {
                     Role::User => ("You", text(&message.content).into()),
                     Role::Assistant => ("Assistant", markdown::view(blocks)),
                 };
                 let mut bubble = column![text(name).font(markdown::BOLD), body].spacing(6);
+                if message.app.is_some() {
+                    bubble =
+                        bubble.push(self.app_placeholder(format!("{}:{index}", conversation.id)));
+                }
                 if let Some(error) = &message.error {
                     bubble = bubble.push(text(format!("⚠ {error}")).style(text::danger));
                 }
@@ -298,9 +459,28 @@ impl ChatApp {
                     .into()
             });
         scrollable(column(items).spacing(8).padding(12).max_width(820))
+            .id(MESSAGES_ID)
             .anchor_bottom()
             .height(Fill)
             .width(Fill)
+            .into()
+    }
+
+    /// Reserves the space of an MCP App view; the webview is laid over it in `place_apps`.
+    fn app_placeholder(&self, key: String) -> Element<'_, Message> {
+        if !self.apps.supported {
+            return text("(MCP App views need X11 on Linux)").into();
+        }
+        let height = self
+            .apps
+            .views
+            .get(&key)
+            .map_or(mcp_app::INITIAL_HEIGHT as f32, |v| v.height);
+        container(space::horizontal())
+            .id(key)
+            .width(Fill)
+            .height(height)
+            .style(container::bordered_box)
             .into()
     }
 
@@ -324,6 +504,16 @@ impl ChatApp {
         };
         row![editor, action.width(80)].spacing(8).padding(10).into()
     }
+}
+
+fn app_host(service: &ChatService, key: &str) -> Option<AppHost> {
+    let (id, index) = key.rsplit_once(':')?;
+    let message = service
+        .workspace
+        .get(id)?
+        .messages
+        .get(index.parse::<usize>().ok()?)?;
+    AppHost::new(message.app.clone()?, Some(mcp_app::Theme::Dark))
 }
 
 fn sidebar(service: &ChatService) -> Element<'_, Message> {

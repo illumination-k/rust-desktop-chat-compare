@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
+use serde_json::json;
 
 use super::{DeltaSink, Provider, ProviderError};
-use crate::ChatRequest;
+use crate::mcp_app::server::DICE_TOOL;
+use crate::{ChatRequest, Role, ToolUse};
 
 /// Env var overriding the per-token delay of [`MockProvider::default`] (milliseconds).
 pub const MOCK_DELAY_ENV: &str = "CHAT_COMPARE_MOCK_DELAY_MS";
@@ -36,6 +38,22 @@ fn main() {
 That's all for now.
 "#;
 
+/// Reply streamed before the mock calls the dice tool (which has an MCP App view).
+const DICE_RESPONSE: &str = "Rolling the dice for you. Try the buttons in the view below.\n";
+
+/// A message mentioning dice makes the mock call the dice tool instead of the fixed response.
+fn wants_dice(request: &ChatRequest) -> bool {
+    request
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::User)
+        .is_some_and(|m| {
+            let text = m.content.to_lowercase();
+            text.contains("dice") || text.contains("サイコロ")
+        })
+}
+
 /// Streams a fixed response token by token without touching the network.
 #[derive(Clone, Debug)]
 pub struct MockProvider {
@@ -59,15 +77,23 @@ impl Default for MockProvider {
 impl Provider for MockProvider {
     fn stream(
         &self,
-        _request: ChatRequest,
+        request: ChatRequest,
         sink: DeltaSink,
     ) -> BoxFuture<'_, Result<(), ProviderError>> {
         Box::pin(async move {
-            for token in self.response.split_inclusive(char::is_whitespace) {
+            let dice = wants_dice(&request);
+            let response = if dice { DICE_RESPONSE } else { &self.response };
+            for token in response.split_inclusive(char::is_whitespace) {
                 if !self.delay.is_zero() {
                     tokio::time::sleep(self.delay).await;
                 }
                 sink.send(token);
+            }
+            if dice {
+                sink.tool_use(ToolUse {
+                    name: DICE_TOOL.to_owned(),
+                    input: json!({ "sides": 6, "count": 3 }),
+                });
             }
             Ok(())
         })

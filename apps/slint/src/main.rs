@@ -1,9 +1,12 @@
 //! AI chat app built with Slint. The UI lives in `ui/app.slint`; this file wires it to chat-core.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
+use app_webview::{AppWebView, Bounds};
 use chat_core::markdown::{self, Block, Span};
+use chat_core::mcp_app::{self, AppHost, HostEvent};
 use chat_core::stream::Canceller;
 use chat_core::{ApiKeyStore, ChatService, ProviderKind, Role, Settings, StreamEvent};
 use slint::{ComponentHandle as _, Model as _, ModelRc, SharedString, StyledText, VecModel};
@@ -23,6 +26,24 @@ use ui::{AppWindow, BlockKind, ChatMessage, ConversationItem, MdBlock};
 struct State {
     service: ChatService,
     streaming: Option<(String, Canceller)>,
+    apps: AppViews,
+}
+
+/// MCP App views (child webviews) of the active conversation, keyed by
+/// `conversation id:message index`.
+#[derive(Default)]
+struct AppViews {
+    supported: bool,
+    views: HashMap<String, AppView>,
+    /// Last reported placeholder rect (window coordinates) and the list's `content-y` then.
+    slots: HashMap<String, (Bounds, f64)>,
+    /// Visible area of the message list and its current `content-y`.
+    list: Option<(Bounds, f64)>,
+}
+
+struct AppView {
+    webview: AppWebView,
+    height: f32,
 }
 
 type Shared = Rc<RefCell<State>>;
@@ -36,9 +57,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = runtime.enter();
 
     let ui = AppWindow::new()?;
+    let supported = app_webview::init();
+    ui.set_app_views_supported(supported);
     let state: Shared = Rc::new(RefCell::new(State {
         service: ChatService::load()?,
         streaming: None,
+        apps: AppViews {
+            supported,
+            ..AppViews::default()
+        },
     }));
     let messages = Rc::new(VecModel::<ChatMessage>::default());
     ui.set_messages(messages.clone().into());
@@ -145,8 +172,132 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }));
 
+    ui.on_app_geometry(handler!(|_ui,
+                                 state,
+                                 _messages,
+                                 key,
+                                 x,
+                                 y,
+                                 width,
+                                 height,
+                                 content_y| {
+        let bounds = rect(x, y, width, height);
+        state
+            .borrow_mut()
+            .apps
+            .slots
+            .insert(key.into(), (bounds, f64::from(content_y)));
+    }));
+    ui.on_list_geometry(handler!(|_ui,
+                                  state,
+                                  _messages,
+                                  x,
+                                  y,
+                                  width,
+                                  height,
+                                  content_y| {
+        state.borrow_mut().apps.list = Some((rect(x, y, width, height), f64::from(content_y)));
+    }));
+    ui.on_app_tick(handler!(|ui, state, messages| {
+        app_tick(&ui, state, messages)
+    }));
+
     ui.run()?;
     Ok(())
+}
+
+fn rect(x: f32, y: f32, width: f32, height: f32) -> Bounds {
+    Bounds {
+        x: f64::from(x),
+        y: f64::from(y),
+        width: f64::from(width),
+        height: f64::from(height),
+    }
+}
+
+fn app_key(conversation: &chat_core::Conversation, index: usize) -> String {
+    format!("{}:{index}", conversation.id)
+}
+
+/// Pumps the webviews, creates/drops them to match the conversation and lays
+/// them over their placeholders.
+fn app_tick(ui: &AppWindow, state: &Shared, messages: &Rc<VecModel<ChatMessage>>) {
+    app_webview::pump_platform();
+    let mut send_text = None;
+    let mut resized = false;
+    {
+        let mut st = state.borrow_mut();
+        let State { service, apps, .. } = &mut *st;
+        let conversation = service.workspace.active();
+        let keys: Vec<String> = conversation
+            .map(|c| {
+                c.messages
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| m.app.is_some())
+                    .map(|(i, _)| app_key(c, i))
+                    .collect()
+            })
+            .unwrap_or_default();
+        apps.views.retain(|key, _| keys.contains(key));
+        apps.slots.retain(|key, _| keys.contains(key));
+        if apps.supported {
+            for key in &keys {
+                if apps.views.contains_key(key) {
+                    continue;
+                }
+                let host = conversation
+                    .zip(
+                        key.rsplit_once(':')
+                            .and_then(|(_, i)| i.parse::<usize>().ok()),
+                    )
+                    .and_then(|(c, i)| c.messages.get(i)?.app.clone())
+                    .and_then(|app| AppHost::new(app, None));
+                let Some(host) = host else { continue };
+                match AppWebView::new(&ui.window().window_handle(), host, || {}) {
+                    Ok(webview) => {
+                        let height = mcp_app::INITIAL_HEIGHT as f32;
+                        apps.views.insert(key.clone(), AppView { webview, height });
+                    }
+                    Err(e) => {
+                        ui.set_error(format!("Failed to create MCP App view: {e}").into());
+                        apps.supported = false;
+                    }
+                }
+            }
+        }
+        let settings_open = ui.get_settings_open();
+        for (key, view) in &mut apps.views {
+            for event in view.webview.pump() {
+                match event {
+                    HostEvent::Resize(height) => {
+                        resized |= (view.height - height as f32).abs() >= 1.0;
+                        view.height = height as f32;
+                    }
+                    HostEvent::SendMessage(text) => send_text = Some(text),
+                    HostEvent::OpenLink(url) => mcp_app::open_link(&url),
+                }
+            }
+            match (apps.list, apps.slots.get(key)) {
+                (Some((viewport, list_y)), Some(&(slot, slot_y))) if !settings_open => {
+                    // The slot may be stale (virtualized away); shift it by the scroll since.
+                    let placeholder = Bounds {
+                        y: slot.y + list_y - slot_y,
+                        ..slot
+                    };
+                    view.webview.place(placeholder, viewport);
+                }
+                _ => view.webview.hide(),
+            }
+        }
+    }
+    if resized {
+        sync_all(ui, &state.borrow(), messages);
+    }
+    if let Some(text) = send_text {
+        ui.set_input_text(text.into());
+        send(ui, state, messages);
+    }
 }
 
 fn send(ui: &AppWindow, state: &Shared, messages: &Rc<VecModel<ChatMessage>>) {
@@ -178,6 +329,10 @@ fn send(ui: &AppWindow, state: &Shared, messages: &Rc<VecModel<ChatMessage>>) {
             let mut st = state.borrow_mut();
             match event {
                 StreamEvent::Delta(delta) => st.service.workspace.append_delta(&id, &delta),
+                StreamEvent::ToolUse(call) => {
+                    st.service.workspace.record_tool_use(&id, &call);
+                    ui.set_app_views_active(true);
+                }
                 StreamEvent::Finished(outcome) => {
                     report(&ui, st.service.workspace.finish_turn(&id, &outcome));
                     st.streaming = None;
@@ -218,28 +373,47 @@ fn sync_all(ui: &AppWindow, state: &State, messages: &VecModel<ChatMessage>) {
     ui.set_streaming(state.streaming.is_some());
     let rows: Vec<ChatMessage> = workspace
         .active()
-        .map(|c| c.messages.iter().map(to_chat_message).collect())
+        .map(|c| {
+            (0..c.messages.len())
+                .map(|i| to_chat_message(c, i, &state.apps))
+                .collect()
+        })
         .unwrap_or_default();
+    ui.set_app_views_active(
+        rows.iter().any(|m| !m.app_key.is_empty()) || !state.apps.views.is_empty(),
+    );
     messages.set_vec(rows);
 }
 
 /// Re-renders only the last (streaming) message.
 fn sync_last(state: &State, messages: &VecModel<ChatMessage>) {
-    let Some(message) = state
-        .service
-        .workspace
-        .active()
-        .and_then(|c| c.messages.last())
-    else {
+    let Some(conversation) = state.service.workspace.active() else {
         return;
     };
-    if let Some(last) = messages.row_count().checked_sub(1) {
-        messages.set_row_data(last, to_chat_message(message));
+    if let (Some(last), Some(index)) = (
+        messages.row_count().checked_sub(1),
+        conversation.messages.len().checked_sub(1),
+    ) {
+        messages.set_row_data(last, to_chat_message(conversation, index, &state.apps));
     }
 }
 
-fn to_chat_message(message: &chat_core::Message) -> ChatMessage {
+fn to_chat_message(
+    conversation: &chat_core::Conversation,
+    index: usize,
+    apps: &AppViews,
+) -> ChatMessage {
+    let message = &conversation.messages[index];
     let is_user = message.role == Role::User;
+    let app_key = if message.app.is_some() {
+        app_key(conversation, index)
+    } else {
+        String::new()
+    };
+    let app_height = apps
+        .views
+        .get(&app_key)
+        .map_or(mcp_app::INITIAL_HEIGHT as f32, |v| v.height);
     let blocks: Vec<MdBlock> = if is_user {
         Vec::new()
     } else {
@@ -253,6 +427,8 @@ fn to_chat_message(message: &chat_core::Message) -> ChatMessage {
         plain: message.content.as_str().into(),
         blocks: ModelRc::new(VecModel::from(blocks)),
         error: message.error.as_deref().unwrap_or_default().into(),
+        app_key: app_key.into(),
+        app_height,
     }
 }
 

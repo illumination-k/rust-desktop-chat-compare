@@ -1,6 +1,6 @@
 // Host page: renders an MCP App view through the sandbox proxy and plays the
 // host's side of the protocol with user-provided (mock) tool data.
-import demoHtml from "./demo-app.html?raw";
+import demoHtml from "../../../crates/chat-core/assets/dice-app.html?raw";
 import { AppBridge, RpcError, type Direction } from "./bridge";
 import {
   defaultSandboxOrigin,

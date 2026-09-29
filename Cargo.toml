@@ -16,8 +16,10 @@ license = "MIT"
 repository = "https://github.com/illumination-k/rust-desktop-chat-compare"
 
 [workspace.dependencies]
+app-webview = { path = "crates/app-webview" }
 chat-core = { path = "crates/chat-core" }
 directories = "6"
+fastrand = "2"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 keyring = "4"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
@@ -31,6 +33,7 @@ tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+webbrowser = "1"
 
 [workspace.lints.clippy]
 print_stdout = "deny"

@@ -7,10 +7,12 @@
 //! - [`Settings`] / [`SettingsStore`] / [`ApiKeyStore`] hold user configuration.
 //! - [`stream::start`] runs a [`Provider`] on the tokio runtime and exposes the
 //!   tokens through a plain `tokio::sync::mpsc` receiver.
+//! - [`mcp_app`] hosts MCP App views that tool calls attach to assistant messages.
 //! - [`markdown`] turns assistant output into flat blocks (native UIs) or HTML (web UIs).
 
 mod error;
 pub mod markdown;
+pub mod mcp_app;
 mod model;
 mod paths;
 pub mod provider;
@@ -28,5 +30,5 @@ pub use provider::{Provider, ProviderError};
 pub use service::ChatService;
 pub use settings::{ApiKeyStore, ProviderKind, Settings, SettingsStore};
 pub use store::ConversationStore;
-pub use stream::{StreamEvent, StreamHandle, StreamOutcome};
+pub use stream::{StreamEvent, StreamHandle, StreamOutcome, ToolUse};
 pub use workspace::Workspace;

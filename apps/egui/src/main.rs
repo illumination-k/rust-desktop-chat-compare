@@ -2,8 +2,12 @@
 
 mod markdown;
 
+use std::collections::HashMap;
 use std::sync::mpsc;
+use std::time::Duration;
 
+use app_webview::{AppWebView, Bounds};
+use chat_core::mcp_app::{self, AppHost, HostEvent, Theme};
 use chat_core::stream::Canceller;
 use chat_core::{ApiKeyStore, ChatService, ProviderKind, Role, Settings, StreamEvent};
 use eframe::egui;
@@ -28,7 +32,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             install_cjk_font(&cc.egui_ctx);
-            Ok(Box::new(ChatApp::new(ChatService::load()?)))
+            let mut app = ChatApp::new(ChatService::load()?);
+            app.apps.supported = app_webview::init();
+            Ok(Box::new(app))
         }),
     )
 }
@@ -82,8 +88,23 @@ struct SettingsDraft {
     api_key_set: bool,
 }
 
+/// MCP App views (child webviews) keyed by `conversation id:message index`.
+#[derive(Default)]
+struct AppViews {
+    supported: bool,
+    views: HashMap<String, AppView>,
+    /// Placeholders drawn this frame: key, placeholder and visible area (egui points).
+    placed: Vec<(String, egui::Rect, egui::Rect)>,
+}
+
+struct AppView {
+    webview: AppWebView,
+    height: f32,
+}
+
 struct ChatApp {
     service: ChatService,
+    apps: AppViews,
     view: View,
     input: String,
     streaming: Option<Streaming>,
@@ -96,6 +117,7 @@ impl ChatApp {
     fn new(service: ChatService) -> Self {
         Self {
             service,
+            apps: AppViews::default(),
             view: View::Chat,
             input: String::new(),
             streaming: None,
@@ -143,6 +165,7 @@ impl ChatApp {
         while let Ok(event) = streaming.events.try_recv() {
             match event {
                 StreamEvent::Delta(text) => self.service.workspace.append_delta(&id, &text),
+                StreamEvent::ToolUse(call) => self.service.workspace.record_tool_use(&id, &call),
                 StreamEvent::Finished(outcome) => {
                     if let Err(e) = self.service.workspace.finish_turn(&id, &outcome) {
                         self.error = Some(e.to_string());
@@ -152,6 +175,94 @@ impl ChatApp {
                 }
             }
         }
+    }
+
+    /// Handles messages from the views and what they ask the host to do.
+    fn pump_apps(&mut self, ctx: &egui::Context) {
+        app_webview::pump_platform();
+        let mut send = None;
+        for view in self.apps.views.values_mut() {
+            for event in view.webview.pump() {
+                match event {
+                    HostEvent::Resize(height) => view.height = height as f32,
+                    HostEvent::SendMessage(text) => send = Some(text),
+                    HostEvent::OpenLink(url) => mcp_app::open_link(&url),
+                }
+            }
+        }
+        if let Some(text) = send {
+            self.input = text;
+            self.send(ctx);
+        }
+        if !self.apps.views.is_empty() {
+            // Webview events only arrive while the GTK loop is pumped, so keep ticking.
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+    }
+
+    /// Creates, moves, hides or drops webviews to match the placeholders drawn this frame.
+    fn place_apps(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let placed = std::mem::take(&mut self.apps.placed);
+        let active = self
+            .service
+            .workspace
+            .active_id()
+            .unwrap_or_default()
+            .to_owned();
+        let prefix = format!("{active}:");
+        self.apps.views.retain(|key, _| key.starts_with(&prefix));
+        let zoom = f64::from(ctx.zoom_factor());
+        let bounds = |r: egui::Rect| Bounds {
+            x: f64::from(r.min.x) * zoom,
+            y: f64::from(r.min.y) * zoom,
+            width: f64::from(r.width()) * zoom,
+            height: f64::from(r.height()) * zoom,
+        };
+        for (key, view) in &mut self.apps.views {
+            if !placed.iter().any(|(k, ..)| k == key) {
+                view.webview.hide();
+            }
+        }
+        for (key, rect, clip) in placed {
+            if !self.apps.views.contains_key(&key) {
+                let Some(host) = self.app_host(&key, ctx) else {
+                    continue;
+                };
+                let wake = ctx.clone();
+                match AppWebView::new(frame, host, move || wake.request_repaint()) {
+                    Ok(webview) => {
+                        let height = mcp_app::INITIAL_HEIGHT as f32;
+                        self.apps
+                            .views
+                            .insert(key.clone(), AppView { webview, height });
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to create MCP App view: {e}"));
+                        self.apps.supported = false;
+                        continue;
+                    }
+                }
+            }
+            if let Some(view) = self.apps.views.get_mut(&key) {
+                view.webview.place(bounds(rect), bounds(clip));
+            }
+        }
+    }
+
+    fn app_host(&self, key: &str, ctx: &egui::Context) -> Option<AppHost> {
+        let (id, index) = key.rsplit_once(':')?;
+        let message = self
+            .service
+            .workspace
+            .get(id)?
+            .messages
+            .get(index.parse::<usize>().ok()?)?;
+        let theme = if ctx.theme() == egui::Theme::Dark {
+            Theme::Dark
+        } else {
+            Theme::Light
+        };
+        AppHost::new(message.app.clone()?, Some(theme))
     }
 
     fn open_settings(&mut self) {
@@ -260,7 +371,9 @@ impl ChatApp {
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 ui.set_max_width(ui.available_width().min(820.0));
-                for (message, blocks) in conversation.messages.iter().zip(blocks) {
+                for (index, (message, blocks)) in
+                    conversation.messages.iter().zip(blocks).enumerate()
+                {
                     let (name, fill) = match message.role {
                         Role::User => ("You", ui.visuals().faint_bg_color),
                         Role::Assistant => ("Assistant", ui.visuals().extreme_bg_color),
@@ -273,6 +386,10 @@ impl ChatApp {
                                 ui.label(&message.content);
                             }
                             Role::Assistant => markdown::show(ui, blocks),
+                        }
+                        if message.app.is_some() {
+                            let key = format!("{}:{index}", conversation.id);
+                            app_placeholder(ui, &mut self.apps, key);
                         }
                         if let Some(error) = &message.error {
                             ui.colored_label(ui.visuals().error_fg_color, format!("⚠ {error}"));
@@ -365,12 +482,36 @@ impl ChatApp {
     }
 }
 
+/// Reserves the space of an MCP App view; the webview is laid over it in `place_apps`.
+fn app_placeholder(ui: &mut egui::Ui, apps: &mut AppViews, key: String) {
+    if !apps.supported {
+        ui.weak("(MCP App views need X11 on Linux)");
+        return;
+    }
+    let height = apps
+        .views
+        .get(&key)
+        .map_or(mcp_app::INITIAL_HEIGHT as f32, |v| v.height);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::hover(),
+    );
+    ui.painter().rect_stroke(
+        rect,
+        6.0,
+        ui.visuals().widgets.noninteractive.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    apps.placed.push((key, rect.shrink(1.0), ui.clip_rect()));
+}
+
 impl eframe::App for ChatApp {
-    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_stream();
+        self.pump_apps(ctx);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         egui::Panel::left("sidebar")
             .resizable(true)
             .default_size(240.0)
@@ -392,5 +533,6 @@ impl eframe::App for ChatApp {
             View::Chat => self.messages(ui),
             View::Settings => self.settings_view(ui),
         });
+        self.place_apps(&ui.ctx().clone(), frame);
     }
 }

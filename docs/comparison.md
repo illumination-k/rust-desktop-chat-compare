@@ -94,6 +94,26 @@ Linux x86_64 / 4 vCPU / rustc 1.97.1、`profile.release` は `strip = true`, `lt
   ブロック構造は `.slint` 側で分岐し、インラインは再エスケープした Markdown を渡している。汎用 `monospace` フォント名がないため `Platform.os` で分岐。
 - WebView 系は CSS でそのまま整形でき、手間は最小。
 
+### MCP Apps の会話内表示
+
+ツール結果に付いた [MCP Apps](https://github.com/modelcontextprotocol/ext-apps)（SEP-1865）の HTML View をメッセージ内に表示する。
+ホスト側のプロトコル処理（`ui/initialize`、ツール入力・結果の通知、`tools/call`、`ui/message` など）と CSP の組み立ては
+`chat_core::mcp_app::AppHost` に一本化した。各 UI が受け持つのは、JSON-RPC メッセージの受け渡しと、返ってくるイベント（高さ変更・メッセージ送信・リンク）の処理だけ。
+
+| App    | 描画                                      | 受け渡し                                    | 所感                                                                                                                             |
+| ------ | ----------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| egui   | 子 WebView（wry）をプレースホルダに重ねる | wry IPC ⇄ `evaluate_script`                 | 矩形とクリップ領域が描画中にそのまま取れるので素直                                                                               |
+| iced   | 同上                                      | 同上                                        | ウィンドウハンドルはコールバック内でしか借りられない。位置は `selector` feature で可視範囲だけを取得し、全体の矩形は高さから逆算 |
+| Slint  | 同上                                      | 同上                                        | `ListView` が行を仮想化するため、行から「その時点の `content-y`」付きで位置を報告させ、スクロール量で補正                        |
+| Tauri  | sandbox 付き iframe（不透明オリジン）     | `postMessage` ⇄ コマンド `app_message`      | 親の CSP が `srcdoc` に継承されるため、カスタム URI スキーム（`mcpapp://`）で配信。再描画で iframe を作り直さない差分描画が必要  |
+| Dioxus | sandbox 付き iframe（`srcdoc`）           | `postMessage` ⇄ `document::eval` のチャネル | コンポーネントの key と props 比較で iframe が保持され、追加の工夫はほぼ不要                                                     |
+
+- ネイティブ系の子 WebView は OS のウィンドウなので、UI のスクロール領域でクリップできない。
+  見えている部分に bounds を切り詰め、上端が隠れた分だけ文書をスクロールさせて、内容が動かないように見せている。
+- Linux のネイティブ系は GTK のイベントループを回す必要があり、View がある間は約 60 Hz でポーリングする（アイドル時の CPU に影響）。
+  子 WebView は X11 のみ対応（Wayland では注記を表示する）。
+- ネイティブ系 3 つも WebKitGTK（wry）にリンクするようになったため、上のビルド時間とバイナリサイズは MCP Apps 対応前の値。
+
 ### ビルド・依存関係・配布
 
 - 5 フレームワークを 1 つの Cargo workspace に置くと、`webkit2gtk-sys`（`links = "web_kit2"`）が 1 バージョンしか共存できない。

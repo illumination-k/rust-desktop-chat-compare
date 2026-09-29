@@ -22,6 +22,9 @@ export struct ChatMessage {
     plain: string,
     blocks: [MdBlock],
     error: string,
+    // MCP App view below the text; empty key = none.
+    app-key: string,
+    app-height: length,
 }
 
 // Slint has no generic "monospace" family, so pick a per-OS default.
@@ -103,6 +106,23 @@ component SettingsPage inherits VerticalBox {
     callback save();
     callback cancel();
     callback remove-key();
+    // Where the MCP App webviews go: a placeholder's window position plus the list's
+    // scroll offset at that time (rows are virtualized, so they stop reporting when
+    // scrolled away), and the visible area of the message list.
+    callback app-geometry(string, length, length, length, length, length);
+    callback list-geometry(length, length, length, length, length);
+    in property <bool> app-views-supported;
+    // Ticks while MCP App views exist: webview events only arrive while the GTK loop is pumped.
+    in property <bool> app-views-active;
+    callback app-tick();
+
+    Timer {
+        interval: 16ms;
+        running: root.app-views-active;
+        triggered => {
+            root.app-tick();
+        }
+    }
 
     alignment: start;
     Text {
@@ -222,6 +242,23 @@ export component AppWindow inherits Window {
     callback save-settings();
     callback cancel-settings();
     callback remove-key();
+    // Where the MCP App webviews go: a placeholder's window position plus the list's
+    // scroll offset at that time (rows are virtualized, so they stop reporting when
+    // scrolled away), and the visible area of the message list.
+    callback app-geometry(string, length, length, length, length, length);
+    callback list-geometry(length, length, length, length, length);
+    in property <bool> app-views-supported;
+    // Ticks while MCP App views exist: webview events only arrive while the GTK loop is pumped.
+    in property <bool> app-views-active;
+    callback app-tick();
+
+    Timer {
+        interval: 16ms;
+        running: root.app-views-active;
+        triggered => {
+            root.app-tick();
+        }
+    }
 
     HorizontalLayout {
         // Sidebar
@@ -343,6 +380,24 @@ export component AppWindow inherits Window {
                             self.content-y = min(0px, self.visible-height - self.content-height);
                         }
                     }
+                    function report() {
+                        root.list-geometry(self.absolute-position.x, self.absolute-position.y, self.visible-width, self.visible-height, self.content-y);
+                    }
+                    init => {
+                        self.report();
+                    }
+                    changed content-y => {
+                        self.report();
+                    }
+                    changed visible-width => {
+                        self.report();
+                    }
+                    changed visible-height => {
+                        self.report();
+                    }
+                    changed absolute-position => {
+                        self.report();
+                    }
                     for m in root.messages: VerticalLayout {
                         padding: 6px;
                         padding-left: 12px;
@@ -365,6 +420,31 @@ export component AppWindow inherits Window {
                                 }
                                 for b in m.blocks: MarkdownBlock {
                                     block: b;
+                                }
+                                if m.app-key != "" && !root.app-views-supported: Text {
+                                    text: "(MCP App views need X11 on Linux)";
+                                    color: Palette.foreground.transparentize(40%);
+                                }
+                                if m.app-key != "" && root.app-views-supported: Rectangle {
+                                    height: m.app-height;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+                                    border-radius: 6px;
+                                    function report() {
+                                        root.app-geometry(m.app-key, self.absolute-position.x, self.absolute-position.y, self.width, self.height, messages.content-y);
+                                    }
+                                    init => {
+                                        self.report();
+                                    }
+                                    changed absolute-position => {
+                                        self.report();
+                                    }
+                                    changed width => {
+                                        self.report();
+                                    }
+                                    changed height => {
+                                        self.report();
+                                    }
                                 }
                                 if m.error != "": Text {
                                     text: "⚠ " + m.error;

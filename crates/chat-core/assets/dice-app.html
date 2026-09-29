@@ -193,7 +193,7 @@
         run("ui/message", () =>
           request("ui/message", {
             role: "user",
-            content: { type: "text", text: `I rolled ${$("status").textContent}. Is that lucky?` },
+            content: { type: "text", text: `${$("status").textContent}. Is that lucky?` },
           }),
         );
       $("context").onclick = () =>

@@ -71,6 +71,7 @@ mod tests {
         while let Some(event) = handle.events.recv().await {
             match event {
                 StreamEvent::Delta(text) => service.workspace.append_delta(&id, &text),
+                StreamEvent::ToolUse(call) => service.workspace.record_tool_use(&id, &call),
                 StreamEvent::Finished(outcome) => {
                     service.workspace.finish_turn(&id, &outcome).unwrap();
                     assert_eq!(outcome, StreamOutcome::Cancelled);

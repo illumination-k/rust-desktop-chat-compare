@@ -1,4 +1,4 @@
-//! LLM providers. Each provider pushes text deltas into a [`DeltaSink`].
+//! LLM providers. Each provider pushes text deltas (and tool calls) into a [`DeltaSink`].
 
 mod anthropic;
 mod mock;
@@ -11,7 +11,9 @@ use tokio::sync::mpsc;
 pub use anthropic::AnthropicProvider;
 pub use mock::MockProvider;
 
-use crate::{ApiKeyStore, ChatRequest, Error, ProviderKind, Result, Settings, StreamEvent};
+use crate::{
+    ApiKeyStore, ChatRequest, Error, ProviderKind, Result, Settings, StreamEvent, ToolUse,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -31,6 +33,10 @@ impl DeltaSink {
     pub fn send(&self, text: impl Into<String>) {
         // A closed receiver means the UI went away; the stream is cancelled right after.
         let _ = self.0.send(StreamEvent::Delta(text.into()));
+    }
+
+    pub fn tool_use(&self, tool_use: ToolUse) {
+        let _ = self.0.send(StreamEvent::ToolUse(tool_use));
     }
 }
 

@@ -2,6 +2,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::mcp_app::AppCall;
+
 const TITLE_MAX_CHARS: usize = 40;
 pub(crate) const DEFAULT_TITLE: &str = "New chat";
 
@@ -19,6 +21,9 @@ pub struct Message {
     /// Set when the assistant turn failed; the partial content is kept.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// A tool call whose result is shown by an MCP App view below the text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<AppCall>,
 }
 
 impl Message {
@@ -27,6 +32,7 @@ impl Message {
             role: Role::User,
             content: content.into(),
             error: None,
+            app: None,
         }
     }
 
@@ -35,6 +41,7 @@ impl Message {
             role: Role::Assistant,
             content: content.into(),
             error: None,
+            app: None,
         }
     }
 }

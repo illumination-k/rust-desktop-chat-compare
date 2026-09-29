@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -12,8 +13,16 @@ use crate::{ChatRequest, Provider};
 pub enum StreamEvent {
     /// A chunk of assistant text.
     Delta(String),
+    /// The model called a tool; record it with [`Workspace::record_tool_use`](crate::Workspace::record_tool_use).
+    ToolUse(ToolUse),
     /// Always the last event of a stream.
     Finished(StreamOutcome),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolUse {
+    pub name: String,
+    pub input: Value,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,10 +105,29 @@ mod tests {
             match handle.events.recv().await.unwrap() {
                 StreamEvent::Delta(t) => text.push_str(&t),
                 StreamEvent::Finished(o) => break o,
+                StreamEvent::ToolUse(_) => {}
             }
         };
         assert_eq!(text, "a b c");
         assert_eq!(outcome, StreamOutcome::Completed);
+    }
+
+    #[tokio::test]
+    async fn mentioning_dice_calls_the_dice_tool() {
+        let provider = MockProvider {
+            delay: Duration::ZERO,
+            ..MockProvider::default()
+        };
+        let mut req = request();
+        req.messages.push(crate::Message::user("サイコロを振って"));
+        let mut handle = start(Arc::new(provider), req);
+        let mut tool = None;
+        while let Some(event) = handle.events.recv().await {
+            if let StreamEvent::ToolUse(t) = event {
+                tool = Some(t.name);
+            }
+        }
+        assert_eq!(tool.as_deref(), Some("roll_dice"));
     }
 
     #[tokio::test]

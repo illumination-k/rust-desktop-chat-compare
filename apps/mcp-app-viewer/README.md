@@ -7,7 +7,7 @@
 pnpm --filter mcp-app-viewer dev   # http://localhost:5180/ を開く
 ```
 
-起動するとサンプル（`src/demo-app.html`。SDK なしで postMessage を直接使うサイコロアプリ）が描画される。
+起動するとサンプル（`crates/chat-core/assets/dice-app.html`。SDK なしで postMessage を直接使うサイコロアプリ）が描画される。
 自分の View を表示するには、HTML を貼るかファイルを選んで **Render** を押す。`resources/read` の結果 JSON（`contents[0]` の `text` / `blob` と `_meta.ui`）も貼れる。
 
 ## 仕様との対応

@@ -8,8 +8,11 @@ type ProviderKind = "anthropic" | "mock";
 interface Snapshot {
   conversations: { id: string; title: string }[];
   activeId: string | null;
-  /** `content` is plain text for user messages and sanitized HTML for assistant ones. */
-  messages: { role: Role; content: string; error: string | null }[];
+  /**
+   * `content` is plain text for user messages and sanitized HTML for assistant ones.
+   * `app` is the key of the MCP App view shown below the text.
+   */
+  messages: { role: Role; content: string; error: string | null; app: string | null }[];
   streaming: boolean;
 }
 
@@ -18,6 +21,12 @@ interface Settings {
   model: string;
   system_prompt: string;
   max_tokens: number;
+}
+
+/** Answer of `app_message`: JSON-RPC messages to post to the view, and host events. */
+interface AppReply {
+  messages: unknown[];
+  events: ({ type: "resize"; value: number } | { type: "send-message"; value: string })[];
 }
 
 interface StreamPayload {
@@ -52,6 +61,10 @@ const ui = {
 };
 
 let current: Snapshot | null = null;
+/** What each rendered message node shows, so unchanged nodes (and their iframes) are kept. */
+let renderedKeys: string[] = [];
+/** MCP App iframes by message key. */
+const frames = new Map<string, HTMLIFrameElement>();
 
 function showError(message: string | null): void {
   ui.error.hidden = message === null;
@@ -88,8 +101,74 @@ function renderMessage(message: Snapshot["messages"][number]): HTMLElement {
     body.innerHTML = message.content; // sanitized by chat-core's markdown::to_html
     bubble.append(body);
   }
+  if (message.app) bubble.append(renderApp(message.app));
   if (message.error) bubble.append(el("div", "message-error", `⚠ ${message.error}`));
   return bubble;
+}
+
+/** A sandboxed iframe (opaque origin) for an MCP App view; the host logic lives in Rust. */
+function renderApp(key: string): HTMLIFrameElement {
+  const frame = el("iframe", "mcp-app");
+  frame.sandbox.value = "allow-scripts allow-forms";
+  frames.set(key, frame);
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  void call<{ url: string; prefersBorder: boolean }>("app_open", { key, dark }).then((info) => {
+    if (!info) return;
+    frame.classList.toggle("bordered", info.prefersBorder);
+    frame.src = info.url;
+  });
+  return frame;
+}
+
+async function closeApps(node: Element): Promise<void> {
+  for (const [key, frame] of frames) {
+    if (!node.contains(frame)) continue;
+    frames.delete(key);
+    // Best effort: the iframe is removed right after.
+    const teardown = await call<unknown>("app_close", { key });
+    if (teardown) frame.contentWindow?.postMessage(teardown, "*");
+  }
+}
+
+window.addEventListener("message", async (event) => {
+  const entry = [...frames].find(([, frame]) => frame.contentWindow === event.source);
+  if (!entry || typeof event.data !== "object" || event.data === null) return;
+  const [key, frame] = entry;
+  const reply = await call<AppReply>("app_message", { key, message: event.data });
+  for (const message of reply?.messages ?? []) frame.contentWindow?.postMessage(message, "*");
+  for (const e of reply?.events ?? []) {
+    if (e.type === "resize") {
+      frame.style.height = `${e.value}px`;
+    } else {
+      ui.input.value = e.value;
+      void send();
+    }
+  }
+});
+
+/** Replaces only the message nodes that changed, so MCP App iframes are not reloaded. */
+function renderMessages(messages: Snapshot["messages"]): void {
+  const nodes = ui.messages.children;
+  messages.forEach((message, i) => {
+    const key = JSON.stringify(message);
+    const node = nodes.item(i);
+    if (node && renderedKeys[i] === key) return;
+    const fresh = renderMessage(message);
+    if (node) {
+      void closeApps(node);
+      node.replaceWith(fresh);
+    } else {
+      ui.messages.append(fresh);
+    }
+    renderedKeys[i] = key;
+  });
+  while (nodes.length > messages.length) {
+    const last = nodes.item(nodes.length - 1);
+    if (!last) break;
+    void closeApps(last);
+    last.remove();
+  }
+  renderedKeys.length = messages.length;
 }
 
 function render(snapshot: Snapshot | undefined): void {
@@ -111,7 +190,7 @@ function render(snapshot: Snapshot | undefined): void {
     }),
   );
   ui.empty.hidden = snapshot.activeId !== null;
-  ui.messages.replaceChildren(...snapshot.messages.map(renderMessage));
+  renderMessages(snapshot.messages);
   ui.send.hidden = snapshot.streaming;
   ui.stop.hidden = !snapshot.streaming;
 }
@@ -197,6 +276,8 @@ void listen<StreamPayload>("stream", ({ payload }) => {
   if (current?.activeId !== payload.conversationId) return;
   const last = ui.messages.lastElementChild?.querySelector(".markdown");
   if (last) last.innerHTML = payload.html; // sanitized by chat-core's markdown::to_html
+  // The node no longer matches what was rendered for it.
+  renderedKeys[ui.messages.children.length - 1] = "";
 });
 
 void call<Snapshot>("get_state").then(render);

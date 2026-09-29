@@ -351,6 +351,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "app-webview"
+version = "0.1.0"
+dependencies = [
+ "chat-core",
+ "gtk",
+ "raw-window-handle 0.6.2",
+ "serde_json",
+ "tracing",
+ "winit",
+ "wry",
+ "x11-dl",
+]
+
+[[package]]
 name = "apple-native-keyring-store"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1187,6 +1201,7 @@ name = "chat-core"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "fastrand",
  "futures-util",
  "keyring",
  "pulldown-cmark",
@@ -1199,6 +1214,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "webbrowser",
 ]
 
 [[package]]
@@ -1207,6 +1223,7 @@ version = "0.1.0"
 dependencies = [
  "chat-core",
  "dioxus",
+ "serde_json",
  "tracing-subscriber",
 ]
 
@@ -1214,6 +1231,7 @@ dependencies = [
 name = "chat-egui"
 version = "0.1.0"
 dependencies = [
+ "app-webview",
  "chat-core",
  "eframe",
  "tokio",
@@ -1225,6 +1243,7 @@ dependencies = [
 name = "chat-iced"
 version = "0.1.0"
 dependencies = [
+ "app-webview",
  "chat-core",
  "iced",
  "tracing-subscriber",
@@ -1234,6 +1253,7 @@ dependencies = [
 name = "chat-slint"
 version = "0.1.0"
 dependencies = [
+ "app-webview",
  "chat-core",
  "slint",
  "slint-build",
@@ -1247,6 +1267,7 @@ version = "0.1.0"
 dependencies = [
  "chat-core",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-codegen",
@@ -4664,8 +4685,18 @@ dependencies = [
  "bytes",
  "iced_core",
  "iced_futures",
+ "iced_selector",
  "raw-window-handle 0.6.2",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "iced_selector"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1442ccc30959cc48b3a624233521ef7f3bc3e06528b6fe306c3a775fbddc4fe"
+dependencies = [
+ "iced_core",
 ]
 
 [[package]]
@@ -8902,6 +8933,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "pin-weak",
+ "raw-window-handle 0.6.2",
  "slint-macros",
  "unicode-segmentation",
  "vtable",

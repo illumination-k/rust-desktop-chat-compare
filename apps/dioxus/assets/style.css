@@ -245,3 +245,18 @@ main {
   display: flex;
   gap: 8px;
 }
+
+.mcp-app {
+  display: block;
+  /* The height reported by the view is its content height; keep the border outside. */
+  box-sizing: content-box;
+  width: 100%;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 8px;
+}
+
+.mcp-app.bordered {
+  border: 1px solid var(--border);
+  width: calc(100% - 2px);
+}

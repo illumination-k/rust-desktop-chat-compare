@@ -1,11 +1,12 @@
+use crate::mcp_app::{AppCall, server};
 use crate::{
     ChatRequest, Conversation, ConversationStore, Error, Message, Result, Role, Settings,
-    StreamOutcome,
+    StreamOutcome, ToolUse,
 };
 
 /// All conversations plus the active selection; the single source of truth for every UI.
 ///
-/// A turn is driven as `begin_turn` → `append_delta`* → `finish_turn`.
+/// A turn is driven as `begin_turn` → (`append_delta` | `record_tool_use`)* → `finish_turn`.
 #[derive(Debug)]
 pub struct Workspace {
     store: ConversationStore,
@@ -109,6 +110,25 @@ impl Workspace {
         }
     }
 
+    /// Runs the tool on the (mock) MCP server and attaches the call to the assistant message,
+    /// so the UI can render the tool's MCP App view.
+    pub fn record_tool_use(&mut self, id: &str, tool_use: &ToolUse) {
+        if let Some(message) = self.get_mut(id).ok().and_then(|c| c.messages.last_mut())
+            && message.role == Role::Assistant
+        {
+            match server::call_tool(&tool_use.name, &tool_use.input) {
+                Ok(result) => {
+                    message.app = Some(AppCall {
+                        tool: tool_use.name.clone(),
+                        input: tool_use.input.clone(),
+                        result,
+                    });
+                }
+                Err(e) => message.error = Some(e),
+            }
+        }
+    }
+
     pub fn finish_turn(&mut self, id: &str, outcome: &StreamOutcome) -> Result<()> {
         let conversation = self.get_mut(id)?;
         if let Some(message) = conversation.messages.last_mut()
@@ -193,6 +213,42 @@ mod tests {
             request.messages,
             vec![Message::user("one"), Message::user("two")]
         );
+    }
+
+    #[test]
+    fn tool_use_attaches_an_app_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ws = workspace(&dir);
+        let (id, _) = ws.begin_turn("roll", &Settings::default()).unwrap();
+        let input = serde_json::json!({ "count": 2 });
+        ws.record_tool_use(
+            &id,
+            &ToolUse {
+                name: "roll_dice".into(),
+                input: input.clone(),
+            },
+        );
+        ws.finish_turn(&id, &StreamOutcome::Completed).unwrap();
+
+        let reloaded = workspace(&dir);
+        let app = reloaded.active().unwrap().messages[1].app.clone().unwrap();
+        assert_eq!(app.input, input);
+        assert_eq!(
+            app.result["structuredContent"]["rolls"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+
+        ws.record_tool_use(
+            &id,
+            &ToolUse {
+                name: "nope".into(),
+                input,
+            },
+        );
+        assert!(ws.active().unwrap().messages[1].error.is_some());
     }
 
     #[test]

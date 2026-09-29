@@ -1,5 +1,9 @@
 //! AI chat app built with Dioxus (desktop / webview).
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use chat_core::mcp_app::{self, AppCall, AppHost, HostEvent};
 use chat_core::stream::Canceller;
 use chat_core::{ApiKeyStore, ChatService, ProviderKind, Role, Settings, StreamEvent};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
@@ -57,6 +61,10 @@ impl AppState {
                     match event {
                         StreamEvent::Delta(delta) => {
                             service.workspace.append_delta(&id, &delta);
+                            continue;
+                        }
+                        StreamEvent::ToolUse(call) => {
+                            service.workspace.record_tool_use(&id, &call);
                             continue;
                         }
                         StreamEvent::Finished(outcome) => {
@@ -192,9 +200,11 @@ fn Messages() -> Element {
                 for (i, message) in conversation.messages.iter().enumerate() {
                     MessageView {
                         key: "{conversation.id}-{i}",
+                        id: format!("{}-{i}", conversation.id),
                         is_user: message.role == Role::User,
                         content: message.content.clone(),
                         error: message.error.clone(),
+                        app: message.app.clone(),
                     }
                 }
             }
@@ -204,7 +214,13 @@ fn Messages() -> Element {
 
 /// Props are compared, so only the streaming message re-renders on each token.
 #[component]
-fn MessageView(is_user: bool, content: String, error: Option<String>) -> Element {
+fn MessageView(
+    id: String,
+    is_user: bool,
+    content: String,
+    error: Option<String>,
+    app: Option<AppCall>,
+) -> Element {
     rsx! {
         div { class: if is_user { "message user" } else { "message assistant" },
             div { class: "role", if is_user { "You" } else { "Assistant" } }
@@ -213,9 +229,84 @@ fn MessageView(is_user: bool, content: String, error: Option<String>) -> Element
             } else {
                 div { class: "markdown", dangerous_inner_html: chat_core::markdown::to_html(&content) }
             }
+            if let Some(call) = app {
+                McpApp { id: "mcp-app-{id}", call }
+            }
             if let Some(error) = error {
                 div { class: "message-error", "⚠ {error}" }
             }
+        }
+    }
+}
+
+/// Relays JSON-RPC between the iframe and Rust. Messages from the view are
+/// forwarded with `dioxus.send`; messages for the view arrive with `dioxus.recv`.
+const APP_BRIDGE_JS: &str = r#"
+const id = await dioxus.recv();
+window.addEventListener("message", (event) => {
+  if (event.source === document.getElementById(id)?.contentWindow) dioxus.send(event.data);
+});
+while (true) {
+  const message = await dioxus.recv();
+  document.getElementById(id)?.contentWindow?.postMessage(message, "*");
+}
+"#;
+
+/// An MCP App view in a sandboxed iframe (opaque origin); the host logic lives in Rust.
+#[component]
+fn McpApp(id: String, call: AppCall) -> Element {
+    let state = use_context::<AppState>();
+    let mut height = use_signal(|| mcp_app::INITIAL_HEIGHT);
+    let host = use_hook(|| AppHost::new(call, None).map(|h| Rc::new(RefCell::new(h))));
+    let Some(host) = host else {
+        return rsx! {
+            div { class: "message-error", "Unknown MCP App tool" }
+        };
+    };
+    let bridge_host = host.clone();
+    let bridge_id = id.clone();
+    use_effect(move || {
+        let host = bridge_host.clone();
+        let mut eval = document::eval(APP_BRIDGE_JS);
+        let _ = eval.send(&bridge_id);
+        spawn(async move {
+            while let Ok(message) = eval.recv::<serde_json::Value>().await {
+                let reply = host.borrow_mut().handle(&message);
+                for message in reply.messages {
+                    let _ = eval.send(message);
+                }
+                for event in reply.events {
+                    match event {
+                        HostEvent::Resize(h) => height.set(h),
+                        HostEvent::SendMessage(text) => state.send(text),
+                        HostEvent::OpenLink(url) => mcp_app::open_link(&url),
+                    }
+                }
+            }
+        });
+    });
+    let teardown_host = host.clone();
+    let teardown_id = id.clone();
+    use_drop(move || {
+        // Best effort: the iframe may already be gone.
+        if let Some(message) = teardown_host.borrow().teardown() {
+            document::eval(&format!(
+                "document.getElementById({teardown_id:?})?.contentWindow?.postMessage({message}, '*')"
+            ));
+        }
+    });
+    let border = if host.borrow().prefers_border() {
+        " bordered"
+    } else {
+        ""
+    };
+    rsx! {
+        iframe {
+            id: "{id}",
+            class: "mcp-app{border}",
+            "sandbox": "allow-scripts allow-forms",
+            srcdoc: host.borrow().document(),
+            style: "height: {height}px",
         }
     }
 }
