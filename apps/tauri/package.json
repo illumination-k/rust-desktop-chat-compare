@@ -9,10 +9,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "~2.9"
+    "@tauri-apps/api": "~2.11"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "~2.9",
+    "@tauri-apps/cli": "~2.11",
     "vite": "^7"
   }
 }
