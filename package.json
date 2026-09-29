@@ -1,0 +1,16 @@
+{
+  "name": "rust-desktop-chat-compare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "knip": {
+    "ignoreDependencies": ["oxfmt"]
+  },
+  "devDependencies": {
+    "knip": "^6",
+    "oxfmt": "^0",
+    "oxlint": "^1",
+    "typescript": "^7",
+    "vitest": "^4"
+  }
+}

@@ -1,0 +1,21 @@
+repos:
+  - repo: builtin
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      # The excludes are for THIS repo, not generated ones: prek discovers this
+      # file as a nested workspace under templates/base and runs check-yaml
+      # against the unrendered template sources (copier.yml is a multi-doc,
+      # dependabot.yml contains Jinja). Generated repos contain neither pattern.
+      - id: check-yaml
+        exclude: copier\.yml$|\.github/dependabot\.yml$
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: detect-private-key

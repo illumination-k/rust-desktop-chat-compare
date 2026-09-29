@@ -1,0 +1,14 @@
+# Codex lifecycle hooks are enabled by default (the old
+# `[features] codex_hooks` flag is a deprecated alias and no longer needed).
+
+[[hooks.SessionStart]]
+matcher = "startup|resume|clear"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'bash "$(git rev-parse --show-toplevel)/.codex/hooks/session-start.sh"'
+timeout = 300
+statusMessage = "Preparing mise environment"
+
+[shell_environment_policy.set]
+MISE_ENV = "base,rust,ts,security"

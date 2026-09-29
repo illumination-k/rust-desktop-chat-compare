@@ -1,0 +1,58 @@
+[tools]
+uv = "0.12.5"
+dprint = "0.56.0"
+prek = "0.4.14"
+shfmt = "3.13.1"
+actionlint = "1.7.12"
+"pipx:zizmor" = "1.29.0"
+shellcheck = "0.11.0"
+"aqua:suzuki-shunsuke/ghalint" = "1.5.6"
+"aqua:suzuki-shunsuke/pinact" = "4.1.1"
+
+[hooks]
+postinstall = "if [ -z \"${CI:-}\" ]; then prek install -f; fi"
+
+[tasks."fmt:base"]
+description = "Format with dprint and shfmt"
+run = [
+  "dprint fmt",
+  "shfmt -w .",
+]
+
+[tasks."lint:base"]
+description = "Lint with dprint, shfmt, shellcheck"
+run = [
+  "dprint check",
+  "shfmt -d .",
+  "find . -name '*.sh' -exec shellcheck {} +",
+]
+
+[tasks."test:base"]
+# The `test` aggregator in .mise.toml depends on `test:*`, and mise errors out
+# when a depends pattern matches nothing. base itself has nothing to test, but
+# this placeholder keeps `mise run test` working in template combinations that
+# bring no test tasks of their own (base only, base+buf, base+security).
+description = "No base-level tests (placeholder so `mise run test` always resolves)"
+run = "echo 'no base-level tests'"
+
+[tasks."fmt:gha"]
+description = "Pin GitHub Actions refs with pinact"
+sources = [".github/**/*"]
+run = ["pinact run"]
+
+[tasks."ci:base"]
+description = "Run base lint tasks"
+depends = ["lint:base"]
+
+[tasks."lint:gha"]
+description = "Lint GitHub Actions with actionlint, zizmor, ghalint, pinact"
+sources = [".github/**/*"]
+# zizmor is scoped to .github rather than the repo root: since 1.29.0 it also audits
+# .pre-commit-config.yaml, and it aborts on prek's `repo: builtin` entries. .github still
+# covers every workflow and composite action.
+run = [
+  "actionlint",
+  "zizmor .github",
+  "ghalint run",
+  "pinact run --check",
+]

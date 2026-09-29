@@ -1,0 +1,48 @@
+name: CodeQL Analysis
+
+# Docs-only changes are skipped; the weekly schedule still scans everything.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: "${{ github.event_name == 'pull_request' }}"
+
+jobs:
+  analyze:
+    # Deliberately NOT ubuntu-slim: CodeQL analysis is compute-bound and
+    # autobuild relies on the full runner toolset.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@c793b717bc78562f491db7b0e93a3a178b099162 # v4.32.5
+        with:
+          # Derived from the templates applied to this repo; auto-detection is
+          # the fallback when no known language template was applied.
+          languages: javascript-typescript,rust
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@c793b717bc78562f491db7b0e93a3a178b099162 # v4.32.5
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@c793b717bc78562f491db7b0e93a3a178b099162 # v4.32.5

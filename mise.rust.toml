@@ -1,0 +1,73 @@
+[settings]
+idiomatic_version_file_enable_tools = ["rust"]
+
+[tools]
+# mise's cargo backend auto-uses cargo-binstall when it's in PATH,
+# installing prebuilt binaries instead of compiling from source.
+"aqua:cargo-bins/cargo-binstall" = "1.21.1"
+"cargo:cargo-nextest" = { version = "0.9.140", depends = ["aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-deny" = { version = "0.20.2", depends = ["aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-audit" = { version = "0.22.2", depends = ["aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-mutants" = { version = "27.1.0", depends = ["aqua:cargo-bins/cargo-binstall"] }
+
+[tasks."fmt:rust"]
+description = "Format Rust code with cargo fmt"
+run = "cargo fmt --all"
+
+[tasks."lint:rust"]
+description = "Lint Rust with clippy, fmt check, cargo-deny, cargo-audit"
+# --locked everywhere that resolves dependencies: a lint run must never silently
+# rewrite Cargo.lock and pull in a version nobody reviewed.
+run = [
+  "cargo clippy --locked --all-targets --all-features -- -D warnings",
+  "cargo fmt --all --check",
+  "cargo deny --locked check",
+  "cargo audit",
+]
+
+[tasks."test:rust"]
+description = "Run Rust tests with cargo-nextest and doctests"
+run = [
+  "cargo nextest run --locked --all-features",
+  "cargo test --doc --locked --all-features",
+]
+
+[tasks."mutants:rust:diff"]
+description = "Run cargo-mutants only on Rust lines changed vs a base git ref (default: main)"
+usage = '''
+arg "[base]" help="Base git ref or revspec for git diff" default="main"
+flag "-j --jobs <jobs>" help="Number of cargo-mutants jobs to run in parallel" default="2"
+'''
+run = '''
+set -eu
+base="${usage_base:-main}"
+jobs="${usage_jobs:-2}"
+case "$jobs" in
+  ''|*[!0-9]*|0)
+    echo "--jobs must be a positive integer."
+    exit 1
+    ;;
+esac
+if ! git rev-parse --verify "$base" >/dev/null 2>&1; then
+  if git rev-parse --verify "origin/$base" >/dev/null 2>&1; then
+    base="origin/$base"
+  elif git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+    base="HEAD~1"
+  else
+    echo "Could not resolve base ref '$base' (or origin/$base) and no HEAD~1 exists."
+    exit 1
+  fi
+fi
+mkdir -p target
+git diff "$base" -- '*.rs' > target/mutants-diff.patch
+if [ ! -s target/mutants-diff.patch ]; then
+  echo "No Rust diff for cargo-mutants (base: $base)"
+  exit 0
+fi
+echo "Running cargo-mutants against diff base: $base"
+cargo mutants --workspace --no-shuffle --iterate --jobs "$jobs" --in-diff target/mutants-diff.patch
+'''
+
+[tasks."ci:rust"]
+description = "Run Rust lint and test tasks"
+depends = ["lint:rust", "test:rust"]

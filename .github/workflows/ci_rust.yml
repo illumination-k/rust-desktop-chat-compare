@@ -1,0 +1,52 @@
+name: CI Rust
+
+# Markdown/docs formatting is covered by the base lint workflows, so
+# docs-only changes skip this workflow entirely.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: "${{ github.event_name == 'pull_request' }}"
+
+jobs:
+  ci:
+    # Deliberately NOT ubuntu-slim: cargo build/clippy are compute-bound, and
+    # included-minute consumption is per wall-clock minute, so the slower
+    # 1-vCPU slim image would eat more of the quota than it saves.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MISE_ENV: rust
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        env:
+          # Avoid GitHub API rate limits for aqua and cargo-binstall
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build
+        run: |
+          if [ ! -f Cargo.lock ]; then
+            echo "::warning::Cargo.lock is missing; generating one for this run. Commit Cargo.lock to pin dependencies."
+            cargo generate-lockfile
+          fi
+          cargo build --locked --workspace --all-features
+
+      - name: CI
+        run: mise run ci:rust

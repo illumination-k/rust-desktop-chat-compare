@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/illumination-k/rust-desktop-chat-compare"
+
+[workspace.dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.clippy]
+print_stdout = "deny"
+print_stderr = "deny"
+unwrap_used = "deny"
+expect_used = "deny"

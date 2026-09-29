@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# mise
+.mise.local.toml
+mise.*.local.toml
+
+# Rust
+target/
+mutants.out/
+mutants.out.old/
+
+# TypeScript / Node
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo

@@ -1,0 +1,28 @@
+[tools]
+node = "26.7.0"
+pnpm = "11.22.0"
+
+[tasks."fmt:ts"]
+description = "Format with oxfmt"
+run = "pnpm exec oxfmt --write src"
+
+[tasks."lint:ts"]
+description = "Lint, fmt check, type-check, and audit TypeScript"
+run = [
+  "pnpm exec oxlint -c oxlint.config.ts .",
+  "pnpm exec oxfmt --check src",
+  "pnpm exec tsc --noEmit",
+  "pnpm audit",
+]
+
+[tasks."lint:knip"]
+description = "Detect unused files, dependencies, and exports with knip"
+run = "pnpm exec knip"
+
+[tasks."test:ts"]
+description = "Run tests with vitest"
+run = "pnpm exec vitest run"
+
+[tasks."ci:ts"]
+description = "Run TypeScript lint, type-check, and test tasks"
+depends = ["lint:ts", "lint:knip", "test:ts"]
