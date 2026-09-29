@@ -11,6 +11,6 @@
     "oxfmt": "^0",
     "oxlint": "^1",
     "typescript": "^7",
-    "vitest": "^4"
+    "vitest": "^5"
   }
 }
