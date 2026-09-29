@@ -1,0 +1,278 @@
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#ffffff, #171717);
+  --panel: light-dark(#f5f5f5, #262626);
+  --border: light-dark(#d4d4d4, #404040);
+  --text: light-dark(#171717, #fafafa);
+  --muted: light-dark(#525252, #a3a3a3);
+  --accent: light-dark(#2563eb, #60a5fa);
+  --in: light-dark(#15803d, #4ade80);
+  --out: light-dark(#1d4ed8, #93c5fd);
+  --danger: light-dark(#dc2626, #f87171);
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+}
+
+code,
+pre,
+textarea {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+button,
+select {
+  padding: 6px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.secondary,
+select {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--text);
+}
+
+button.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) 1fr;
+  height: 100%;
+}
+
+.inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.inputs header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+label {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+label small {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+label.check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: normal;
+}
+
+textarea {
+  width: 100%;
+  padding: 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preview {
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.preview.bordered {
+  border: 1px solid var(--border);
+}
+
+.preview iframe {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border: 0;
+  border-radius: inherit;
+}
+
+.preview.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.preview.fullscreen iframe {
+  height: 100% !important;
+}
+
+.exit-fullscreen {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 11;
+}
+
+.empty {
+  margin: 0;
+  padding: 32px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+
+.panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.panel ol {
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.panel li {
+  border-bottom: 1px solid var(--border);
+}
+
+.panel summary {
+  padding: 4px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.panel li.in summary {
+  color: var(--in);
+}
+
+.panel li.out summary {
+  color: var(--out);
+}
+
+.panel time {
+  color: var(--muted);
+}
+
+.panel pre {
+  margin: 0 0 8px;
+  padding: 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .inputs {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panels {
+    grid-template-columns: 1fr;
+  }
+}

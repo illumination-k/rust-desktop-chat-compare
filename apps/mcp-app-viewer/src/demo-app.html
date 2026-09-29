@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dice roller (MCP App demo)</title>
+    <style>
+      /* Fallbacks for hosts that don't pass these style variables. */
+      :root {
+        color-scheme: light dark;
+        --color-background-primary: light-dark(#ffffff, #171717);
+        --color-background-secondary: light-dark(#f5f5f5, #262626);
+        --color-text-primary: light-dark(#171717, #fafafa);
+        --color-text-secondary: light-dark(#525252, #a3a3a3);
+        --color-border-primary: light-dark(#d4d4d4, #404040);
+        --font-sans: system-ui, sans-serif;
+        --font-mono: ui-monospace, monospace;
+        --border-radius-md: 8px;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        font-family: var(--font-sans);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+      #status {
+        margin: 0 0 12px;
+        color: var(--color-text-secondary);
+        font-size: 13px;
+      }
+      #dice {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .die {
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border: 1px solid var(--color-border-primary);
+        border-radius: var(--border-radius-md);
+        background: var(--color-background-secondary);
+        font: 600 20px var(--font-mono);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      button {
+        padding: 6px 10px;
+        border: 1px solid var(--color-border-primary);
+        border-radius: var(--border-radius-md);
+        background: var(--color-background-secondary);
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      pre {
+        margin: 12px 0 0;
+        max-height: 120px;
+        overflow: auto;
+        color: var(--color-text-secondary);
+        font: 12px var(--font-mono);
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Dice roller</h1>
+    <p id="status">Connecting to host…</p>
+    <div id="dice"></div>
+    <div class="actions">
+      <button id="reroll">Reroll (tools/call)</button>
+      <button id="ask">Ask (ui/message)</button>
+      <button id="context">Update model context</button>
+      <button id="link">Open spec (ui/open-link)</button>
+      <button id="fullscreen">Fullscreen</button>
+    </div>
+    <pre id="log"></pre>
+    <script>
+      // Talks to the host with plain postMessage; no SDK needed.
+      let nextId = 1;
+      const pending = new Map();
+      const state = { input: null, result: null, context: {} };
+      const $ = (id) => document.getElementById(id);
+
+      function post(msg) {
+        window.parent.postMessage({ jsonrpc: "2.0", ...msg }, "*");
+      }
+      function request(method, params) {
+        const id = nextId++;
+        post({ id, method, params });
+        return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+      }
+      function notify(method, params) {
+        post({ method, params });
+      }
+      function log(text) {
+        $("log").textContent =
+          `${new Date().toLocaleTimeString()} ${text}\n` + $("log").textContent;
+      }
+
+      function applyContext(ctx) {
+        state.context = { ...state.context, ...ctx };
+        const root = document.documentElement;
+        if (ctx.theme) root.style.colorScheme = ctx.theme;
+        for (const [key, value] of Object.entries(ctx.styles?.variables ?? {})) {
+          if (value) root.style.setProperty(key, value);
+        }
+        const fullscreen = state.context.displayMode === "fullscreen";
+        $("fullscreen").textContent = fullscreen ? "Exit fullscreen" : "Fullscreen";
+        $("fullscreen").hidden = !(state.context.availableDisplayModes ?? []).includes(
+          "fullscreen",
+        );
+      }
+
+      function render() {
+        const rolls = state.result?.structuredContent?.rolls ?? [];
+        $("dice").replaceChildren(
+          ...rolls.map((n) =>
+            Object.assign(document.createElement("div"), { className: "die", textContent: n }),
+          ),
+        );
+        const text = state.result?.content?.find((c) => c.type === "text")?.text;
+        $("status").textContent = state.result
+          ? (text ?? "Result received")
+          : `Rolling ${JSON.stringify(state.input ?? {})}…`;
+      }
+
+      const notifications = {
+        "ui/notifications/tool-input": (p) => {
+          state.input = p.arguments;
+          render();
+        },
+        "ui/notifications/tool-result": (p) => {
+          state.result = p;
+          render();
+        },
+        "ui/notifications/tool-cancelled": (p) => {
+          $("status").textContent = `Cancelled: ${p.reason ?? "unknown"}`;
+        },
+        "ui/notifications/host-context-changed": applyContext,
+      };
+
+      window.addEventListener("message", (event) => {
+        const msg = event.data;
+        if (event.source !== window.parent || msg?.jsonrpc !== "2.0") return;
+        if (msg.method === undefined) {
+          const p = pending.get(msg.id);
+          pending.delete(msg.id);
+          if (msg.error) p?.reject(new Error(msg.error.message));
+          else p?.resolve(msg.result);
+        } else if (msg.id !== undefined) {
+          // Only request the host sends us is teardown; nothing to save here.
+          if (msg.method === "ui/resource-teardown") post({ id: msg.id, result: {} });
+          else
+            post({
+              id: msg.id,
+              error: { code: -32601, message: `Method not found: ${msg.method}` },
+            });
+        } else {
+          log(msg.method);
+          notifications[msg.method]?.(msg.params);
+        }
+      });
+
+      async function run(label, action) {
+        try {
+          log(`${label} → ${JSON.stringify(await action())}`);
+        } catch (e) {
+          log(`${label} failed: ${e.message}`);
+        }
+      }
+
+      $("reroll").onclick = () =>
+        run("tools/call", async () => {
+          state.result = await request("tools/call", {
+            name: "roll_dice",
+            arguments: state.input ?? {},
+          });
+          render();
+          return state.result.structuredContent;
+        });
+      $("ask").onclick = () =>
+        run("ui/message", () =>
+          request("ui/message", {
+            role: "user",
+            content: { type: "text", text: `I rolled ${$("status").textContent}. Is that lucky?` },
+          }),
+        );
+      $("context").onclick = () =>
+        run("ui/update-model-context", () =>
+          request("ui/update-model-context", {
+            structuredContent: { lastRolls: state.result?.structuredContent?.rolls },
+          }),
+        );
+      $("link").onclick = () =>
+        run("ui/open-link", () =>
+          request("ui/open-link", { url: "https://github.com/modelcontextprotocol/ext-apps" }),
+        );
+      $("fullscreen").onclick = () =>
+        run("ui/request-display-mode", async () => {
+          const mode = state.context.displayMode === "fullscreen" ? "inline" : "fullscreen";
+          const result = await request("ui/request-display-mode", { mode });
+          applyContext({ displayMode: result.mode });
+          return result;
+        });
+
+      (async () => {
+        const result = await request("ui/initialize", {
+          protocolVersion: "2026-01-26",
+          appInfo: { name: "dice-demo", version: "1.0.0" },
+          appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+        });
+        applyContext(result.hostContext ?? {});
+        notify("ui/notifications/initialized", {});
+        notify("notifications/message", { level: "info", data: "dice demo ready" });
+        const root = document.documentElement;
+        new ResizeObserver(() => {
+          const { width, height } = root.getBoundingClientRect();
+          notify("ui/notifications/size-changed", {
+            width: Math.ceil(width),
+            height: Math.ceil(height),
+          });
+        }).observe(root);
+      })();
+    </script>
+  </body>
+</html>

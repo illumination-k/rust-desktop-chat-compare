@@ -82,6 +82,7 @@ apps/egui/               # eframe
 apps/iced/               # iced
 apps/slint/              # Slint (.slint DSL)
 apps/dioxus/             # Dioxus desktop
+apps/mcp-app-viewer/     # MCP Apps の HTML View を表示する Web ホスト（補助ツール）
 bench/                   # 計測スクリプトと結果
 docs/comparison.md       # 比較表と所感
 ```

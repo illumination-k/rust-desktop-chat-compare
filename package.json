@@ -10,6 +10,14 @@
         "project": [
           "src/**/*.ts"
         ]
+      },
+      "apps/mcp-app-viewer": {
+        "entry": [
+          "src/sandbox.ts"
+        ],
+        "project": [
+          "src/**/*.ts"
+        ]
       }
     }
   },

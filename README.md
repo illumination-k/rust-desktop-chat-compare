@@ -3,15 +3,16 @@
 同じ「AI チャットアプリ」を Rust の 5 つのデスクトップ GUI フレームワークで実装し、
 開発体験・性能・配布サイズを比較する検証用 monorepo。結果と所感は [docs/comparison.md](docs/comparison.md)。
 
-| Path               | 内容                                                    |
-| ------------------ | ------------------------------------------------------- |
-| `crates/chat-core` | UI 非依存のロジック（LLM ストリーミング、永続化、設定） |
-| `apps/egui`        | egui (eframe)                                           |
-| `apps/tauri`       | Tauri v2（`src-tauri/` + Vite/TypeScript フロント）     |
-| `apps/iced`        | iced                                                    |
-| `apps/slint`       | Slint                                                   |
-| `apps/dioxus`      | Dioxus desktop                                          |
-| `bench/`           | 計測スクリプトと結果                                    |
+| Path                  | 内容                                                                  |
+| --------------------- | --------------------------------------------------------------------- |
+| `crates/chat-core`    | UI 非依存のロジック（LLM ストリーミング、永続化、設定）               |
+| `apps/egui`           | egui (eframe)                                                         |
+| `apps/tauri`          | Tauri v2（`src-tauri/` + Vite/TypeScript フロント）                   |
+| `apps/iced`           | iced                                                                  |
+| `apps/slint`          | Slint                                                                 |
+| `apps/dioxus`         | Dioxus desktop                                                        |
+| `apps/mcp-app-viewer` | MCP Apps の HTML View を表示する Web ホスト（比較対象外の補助ツール） |
+| `bench/`              | 計測スクリプトと結果                                                  |
 
 ## 機能（全アプリ共通）
 
@@ -32,6 +33,7 @@ cargo run -p chat-iced
 cargo run -p chat-slint
 cargo run -p chat-dioxus
 pnpm --filter chat-tauri tauri dev
+pnpm --filter mcp-app-viewer dev   # MCP Apps viewer: http://localhost:5180/
 ```
 
 Linux では GUI 系のシステムライブラリが必要: `scripts/install-linux-deps.sh`

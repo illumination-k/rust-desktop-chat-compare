@@ -3,5 +3,6 @@ trustPolicy: no-downgrade
 blockExoticSubdeps: true
 packages:
   - apps/tauri
+  - apps/mcp-app-viewer
 allowBuilds:
   esbuild: true

@@ -1,0 +1,3 @@
+# shfmt reads this; skip generated shell shims under node_modules.
+[**/node_modules/**]
+ignore = true
