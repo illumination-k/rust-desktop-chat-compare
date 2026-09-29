@@ -3,7 +3,7 @@ resolver = "3"
 members = [
   "crates/*",
   "apps/egui",
-  # "apps/iced",
+  "apps/iced",
   # "apps/slint",
   # "apps/dioxus",
   # "apps/tauri/src-tauri",
