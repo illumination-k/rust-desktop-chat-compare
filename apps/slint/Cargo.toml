@@ -1,0 +1,19 @@
+[package]
+name = "chat-slint"
+description = "AI chat app built with Slint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+chat-core.workspace = true
+slint = "1.18"
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+slint-build = "1.18"
+
+[lints]
+workspace = true
