@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MCP App Viewer</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="inputs">
+        <header>
+          <h1>MCP App Viewer</h1>
+          <button id="load-demo" class="secondary">Load demo</button>
+        </header>
+        <label for="resource">
+          UI resource <small>HTML, or a <code>resources/read</code> result as JSON</small>
+        </label>
+        <input id="file" type="file" accept=".html,.htm,.json" />
+        <textarea id="resource" rows="10" spellcheck="false"></textarea>
+        <label for="tool">Tool <small><code>tools/list</code> entry (optional)</small></label>
+        <textarea id="tool" rows="5" spellcheck="false"></textarea>
+        <label for="tool-input">Tool input <small>arguments</small></label>
+        <textarea id="tool-input" rows="3" spellcheck="false"></textarea>
+        <label for="tool-result">Tool result <small><code>CallToolResult</code></small></label>
+        <textarea id="tool-result" rows="5" spellcheck="false"></textarea>
+        <label class="check">
+          <input id="auto-result" type="checkbox" checked /> Send the tool result right after initialization
+        </label>
+        <label for="call-response">
+          <code>tools/call</code> response <small>returned for calls from the view</small>
+        </label>
+        <textarea id="call-response" rows="4" spellcheck="false"></textarea>
+        <label for="theme">Theme</label>
+        <select id="theme">
+          <option value="light">light</option>
+          <option value="dark">dark</option>
+        </select>
+        <p id="error" class="error" hidden></p>
+        <div class="actions">
+          <button id="render">Render</button>
+          <button id="send-result" class="secondary" disabled>Send tool-result</button>
+          <button id="cancel" class="secondary" disabled>Send tool-cancelled</button>
+          <button id="teardown" class="secondary" disabled>Teardown</button>
+        </div>
+      </aside>
+      <main>
+        <div class="preview-bar">
+          <code id="uri"></code>
+          <span id="status" class="badge">idle</span>
+        </div>
+        <div id="preview" class="preview">
+          <p class="empty">Paste a view and press Render.</p>
+        </div>
+        <button id="exit-fullscreen" class="exit-fullscreen" hidden>Exit fullscreen</button>
+        <section class="panels">
+          <div class="panel">
+            <h2>Host inbox</h2>
+            <ol id="inbox"></ol>
+          </div>
+          <div class="panel">
+            <h2>JSON-RPC log <button id="clear-log" class="secondary small">Clear</button></h2>
+            <ol id="log"></ol>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

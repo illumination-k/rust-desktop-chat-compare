@@ -71,17 +71,21 @@ Rust のデスクトップ GUI フレームワークで同じ「AI チャット�
 - Markdown 表示（最低限: 見出し・リスト・コードブロック）
 - 会話履歴のローカル永続化（JSON、OS 標準のデータディレクトリ）
 - 設定画面: API キー・モデル・system prompt
+- MCP Apps（SEP-1865）の View をツール結果として会話内に表示する。ホスト側のプロトコルは `chat_core::mcp_app`、
+  ツールはモックの MCP サーバが提供する。ネイティブ系は子 WebView、WebView 系は sandbox 付きの iframe で描画する
 - API キーは OS キーチェーン（`keyring` crate）に保存し、平文でファイルに書かない
 
 ## Architecture
 
 ```
 crates/chat-core/        # UI 非依存のロジック（全アプリ共通）
+crates/app-webview/      # MCP App をネイティブ UI に子 WebView (wry) で埋め込む（egui / iced / Slint 用）
 apps/tauri/              # Tauri v2: src-tauri/ (Rust) + フロント (TS, pnpm workspace)
 apps/egui/               # eframe
 apps/iced/               # iced
 apps/slint/              # Slint (.slint DSL)
 apps/dioxus/             # Dioxus desktop
+apps/mcp-app-viewer/     # MCP Apps の HTML View を表示する Web ホスト（補助ツール）
 bench/                   # 計測スクリプトと結果
 docs/comparison.md       # 比較表と所感
 ```
@@ -98,12 +102,14 @@ docs/comparison.md       # 比較表と所感
 ### 比較観点（docs/comparison.md）
 
 計測値:
+
 - リリースビルドのバイナリ / インストーラサイズ
 - 起動時間（コールド / ウォーム）、アイドル時と長い会話（1,000 メッセージ）表示時のメモリ
 - ストリーミング中の CPU 使用率・描画のカクつき
 - clean build / incremental build 時間
 
 定性評価:
+
 - 状態管理とストリーミング実装のしやすさ、コード量（`tokei`）
 - テキスト入力・IME（日本語入力）・選択/コピー・スクロールの品質
 - Markdown / コードブロック表示の手間、テーマ・見た目の自由度
@@ -113,11 +119,9 @@ docs/comparison.md       # 比較表と所感
 
 ## Notes
 
-- テンプレート由来の初期配置は目標構成と異なるので、初期セットアップで移す:
-  - rust テンプレートの `crates/rust-desktop-chat-compare/` → `crates/chat-core/` にリネームし、
-    workspace の members に `crates/*` と `apps/*`（Tauri は `apps/tauri/src-tauri`）を追加
-  - ts テンプレートのルート `src/` は `apps/tauri/` のフロントに置き換え、
-    `pnpm-workspace.yaml` に `apps/tauri` を追加する
+- テンプレートからの初期移行（`crates/chat-core` へのリネーム、workspace members、`apps/tauri` の pnpm workspace 化）は完了済み
+- 全アプリが 1 つの Cargo workspace / lockfile を共有するため、`webkit2gtk-sys` は 1 バージョンしか共存できない。
+  dioxus-desktop が要求する wry に合わせて Tauri のバージョンを固定している（`apps/tauri/src-tauri/Cargo.toml` 参照）
 - 1 フレームワークずつ実装し、同じ仕様を満たしたら比較表を更新する。
   実装順の目安: egui → Tauri → iced → Slint → Dioxus
-- Linux の CI では Tauri / 各 GUI crate のシステム依存（webkit2gtk, xkbcommon 等）のインストールが必要
+- Linux の CI では Tauri / 各 GUI crate のシステム依存（webkit2gtk, xkbcommon 等）のインストールが必要（`scripts/install-linux-deps.sh`）

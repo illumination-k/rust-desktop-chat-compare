@@ -1,0 +1,21 @@
+[package]
+name = "chat-slint"
+version.workspace = true
+build = "build.rs"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "AI chat app built with Slint"
+
+[dependencies]
+app-webview.workspace = true
+chat-core.workspace = true
+slint = { version = "1.18", features = ["raw-window-handle-06"] }
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+slint-build = "1.18"
+
+[lints]
+workspace = true

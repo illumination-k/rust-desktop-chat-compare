@@ -1,0 +1,16 @@
+[package]
+name = "chat-iced"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "AI chat app built with iced"
+
+[dependencies]
+app-webview.workspace = true
+chat-core.workspace = true
+iced = { version = "0.14", features = ["tokio", "selector"] }
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

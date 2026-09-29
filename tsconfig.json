@@ -10,6 +10,6 @@
     "isolatedModules": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "*.config.ts"],
+  "include": ["*.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

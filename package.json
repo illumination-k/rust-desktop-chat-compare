@@ -4,7 +4,22 @@
   "private": true,
   "type": "module",
   "knip": {
-    "ignoreDependencies": ["oxfmt"]
+    "workspaces": {
+      ".": {},
+      "apps/tauri": {
+        "project": [
+          "src/**/*.ts"
+        ]
+      },
+      "apps/mcp-app-viewer": {
+        "entry": [
+          "src/sandbox.ts"
+        ],
+        "project": [
+          "src/**/*.ts"
+        ]
+      }
+    }
   },
   "devDependencies": {
     "knip": "^6",

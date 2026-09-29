@@ -1,10 +1,16 @@
 [package]
-name = "rust-desktop-chat-compare"
+name = "chat-egui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
+description = "AI chat app built with egui (eframe)"
 
 [dependencies]
+app-webview.workspace = true
+chat-core.workspace = true
+eframe = "0.36"
+tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

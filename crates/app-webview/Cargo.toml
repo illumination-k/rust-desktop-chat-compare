@@ -1,0 +1,22 @@
+[package]
+name = "app-webview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Embeds MCP App views as native child webviews (wry) in the non-web UIs"
+
+[dependencies]
+chat-core.workspace = true
+raw-window-handle = "0.6"
+serde_json.workspace = true
+tracing.workspace = true
+wry = "0.53"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+winit = { version = "0.30", default-features = false, features = ["x11"] }
+x11-dl = "2"
+
+[lints]
+workspace = true

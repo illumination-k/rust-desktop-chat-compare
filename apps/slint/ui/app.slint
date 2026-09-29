@@ -1,0 +1,503 @@
+import { Button, ComboBox, LineEdit, ListView, Palette, ScrollView, SpinBox, TextEdit, VerticalBox } from "std-widgets.slint";
+
+export struct ConversationItem {
+    id: string,
+    title: string,
+}
+
+export enum BlockKind { heading, paragraph, list-item, quote, code, rule }
+
+export struct MdBlock {
+    kind: BlockKind,
+    text: styled-text,
+    code: string,
+    lang: string,
+    level: int,
+    depth: int,
+    marker: string,
+}
+
+export struct ChatMessage {
+    is-user: bool,
+    plain: string,
+    blocks: [MdBlock],
+    error: string,
+    // MCP App view below the text; empty key = none.
+    app-key: string,
+    app-height: length,
+}
+
+// Slint has no generic "monospace" family, so pick a per-OS default.
+global Fonts {
+    out property <string> mono: Platform.os == OperatingSystemType.macos ? "Menlo"
+        : Platform.os == OperatingSystemType.windows ? "Consolas" : "DejaVu Sans Mono";
+}
+
+component MarkdownBlock inherits VerticalLayout {
+    in property <MdBlock> block;
+
+    if block.kind == BlockKind.heading: StyledText {
+        text: block.text;
+        default-font-size: block.level == 1 ? 22px : block.level == 2 ? 19px : 16px;
+    }
+    if block.kind == BlockKind.paragraph: StyledText {
+        text: block.text;
+    }
+    if block.kind == BlockKind.list-item: HorizontalLayout {
+        padding-left: 12px + 16px * block.depth;
+        spacing: 6px;
+        Text {
+            text: block.marker;
+            vertical-alignment: top;
+        }
+        StyledText {
+            text: block.text;
+            horizontal-stretch: 1;
+            horizontal-alignment: left;
+        }
+    }
+    if block.kind == BlockKind.quote: HorizontalLayout {
+        spacing: 8px;
+        Rectangle {
+            width: 3px;
+            background: Palette.border;
+        }
+        StyledText {
+            text: block.text;
+            horizontal-stretch: 1;
+            horizontal-alignment: left;
+        }
+    }
+    if block.kind == BlockKind.code: Rectangle {
+        background: Palette.alternate-background;
+        border-radius: 4px;
+        VerticalLayout {
+            padding: 8px;
+            spacing: 4px;
+            // No clipboard API in Slint's Rust API; the read-only TextInput below is selectable.
+            Text {
+                text: block.lang;
+                font-size: 11px;
+                color: Palette.foreground.transparentize(40%);
+            }
+            TextInput {
+                text: block.code;
+                read-only: true;
+                single-line: false;
+                font-family: Fonts.mono;
+                wrap: word-wrap;
+            }
+        }
+    }
+    if block.kind == BlockKind.rule: Rectangle {
+        height: 1px;
+        background: Palette.border;
+    }
+}
+
+component SettingsPage inherits VerticalBox {
+    in property <[string]> providers;
+    in-out property <int> provider-index;
+    in-out property <string> api-key;
+    in property <bool> api-key-set;
+    in-out property <string> model;
+    in-out property <int> max-tokens;
+    in-out property <string> system-prompt;
+    callback save();
+    callback cancel();
+    callback remove-key();
+    // Where the MCP App webviews go: a placeholder's window position plus the list's
+    // scroll offset at that time (rows are virtualized, so they stop reporting when
+    // scrolled away), and the visible area of the message list.
+    callback app-geometry(string, length, length, length, length, length);
+    callback list-geometry(length, length, length, length, length);
+    in property <bool> app-views-supported;
+    // Ticks while MCP App views exist: webview events only arrive while the GTK loop is pumped.
+    in property <bool> app-views-active;
+    callback app-tick();
+
+    Timer {
+        interval: 16ms;
+        running: root.app-views-active;
+        triggered => {
+            root.app-tick();
+        }
+    }
+
+    alignment: start;
+    Text {
+        text: "Settings";
+        font-size: 22px;
+    }
+    GridLayout {
+        spacing: 10px;
+        Row {
+            Text {
+                text: "Provider";
+                vertical-alignment: center;
+            }
+            ComboBox {
+                model: root.providers;
+                current-index <=> root.provider-index;
+            }
+        }
+        Row {
+            Text {
+                text: "API key";
+                vertical-alignment: center;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    input-type: password;
+                    text <=> root.api-key;
+                    placeholder-text: root.api-key-set ? "•••• (saved in keychain)" : "sk-ant-…";
+                }
+                if root.api-key-set: Button {
+                    text: "Remove saved key";
+                    clicked => {
+                        root.remove-key();
+                    }
+                }
+            }
+        }
+        Row {
+            Text {
+                text: "Model";
+                vertical-alignment: center;
+            }
+            LineEdit {
+                text <=> root.model;
+            }
+        }
+        Row {
+            Text {
+                text: "Max tokens";
+                vertical-alignment: center;
+            }
+            SpinBox {
+                minimum: 1;
+                maximum: 64000;
+                value <=> root.max-tokens;
+            }
+        }
+        Row {
+            Text {
+                text: "System prompt";
+            }
+            TextEdit {
+                height: 140px;
+                text <=> root.system-prompt;
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        Button {
+            text: "Save";
+            primary: true;
+            clicked => {
+                root.save();
+            }
+        }
+        Button {
+            text: "Cancel";
+            clicked => {
+                root.cancel();
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Chat (Slint)";
+    preferred-width: 1000px;
+    preferred-height: 700px;
+    background: Palette.background;
+
+    in property <[ConversationItem]> conversations;
+    in property <string> active-id;
+    in property <[ChatMessage]> messages;
+    in property <bool> streaming;
+    in property <string> error;
+    in-out property <string> input-text;
+    in-out property <bool> settings-open;
+
+    in property <[string]> providers;
+    in-out property <int> provider-index;
+    in-out property <string> api-key;
+    in property <bool> api-key-set;
+    in-out property <string> model;
+    in-out property <int> max-tokens;
+    in-out property <string> system-prompt;
+
+    callback new-chat();
+    callback select(string);
+    callback delete(string);
+    callback send();
+    callback stop();
+    callback dismiss-error();
+    callback open-settings();
+    callback save-settings();
+    callback cancel-settings();
+    callback remove-key();
+    // Where the MCP App webviews go: a placeholder's window position plus the list's
+    // scroll offset at that time (rows are virtualized, so they stop reporting when
+    // scrolled away), and the visible area of the message list.
+    callback app-geometry(string, length, length, length, length, length);
+    callback list-geometry(length, length, length, length, length);
+    in property <bool> app-views-supported;
+    // Ticks while MCP App views exist: webview events only arrive while the GTK loop is pumped.
+    in property <bool> app-views-active;
+    callback app-tick();
+
+    Timer {
+        interval: 16ms;
+        running: root.app-views-active;
+        triggered => {
+            root.app-tick();
+        }
+    }
+
+    HorizontalLayout {
+        // Sidebar
+        Rectangle {
+            width: 240px;
+            background: Palette.alternate-background;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button {
+                        text: "+ New chat";
+                        clicked => {
+                            root.new-chat();
+                        }
+                    }
+                    Button {
+                        text: "Settings";
+                        clicked => {
+                            root.open-settings();
+                        }
+                    }
+                }
+                ListView {
+                    for c in root.conversations: Rectangle {
+                        height: 32px;
+                        border-radius: 4px;
+                        background: c.id == root.active-id ? Palette.accent-background : transparent;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            TouchArea {
+                                clicked => {
+                                    root.select(c.id);
+                                }
+                                Text {
+                                    width: 100%;
+                                    text: c.title;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    color: c.id == root.active-id ? Palette.accent-foreground : Palette.foreground;
+                                }
+                            }
+                            TouchArea {
+                                width: 28px;
+                                clicked => {
+                                    root.delete(c.id);
+                                }
+                                Text {
+                                    text: "🗑";
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            if root.error != "": Rectangle {
+                background: #7f1d1d;
+                HorizontalLayout {
+                    padding: 8px;
+                    Text {
+                        text: root.error;
+                        color: white;
+                        wrap: word-wrap;
+                    }
+                    TouchArea {
+                        width: 24px;
+                        clicked => {
+                            root.dismiss-error();
+                        }
+                        Text {
+                            text: "✕";
+                            color: white;
+                        }
+                    }
+                }
+            }
+
+            if root.settings-open: SettingsPage {
+                providers: root.providers;
+                provider-index <=> root.provider-index;
+                api-key <=> root.api-key;
+                api-key-set: root.api-key-set;
+                model <=> root.model;
+                max-tokens <=> root.max-tokens;
+                system-prompt <=> root.system-prompt;
+                save => {
+                    root.save-settings();
+                }
+                cancel => {
+                    root.cancel-settings();
+                }
+                remove-key => {
+                    root.remove-key();
+                }
+            }
+
+            if !root.settings-open: VerticalLayout {
+                if root.messages.length == 0: Text {
+                    vertical-stretch: 1;
+                    text: "Start a new conversation";
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                if root.messages.length > 0: messages := ListView {
+                    vertical-stretch: 1;
+                    // Follow new tokens while the user is at the bottom.
+                    property <bool> stick-to-bottom: true;
+                    scrolled => {
+                        self.stick-to-bottom = self.content-y <= self.visible-height - self.content-height + 20px;
+                    }
+                    changed content-height => {
+                        if self.stick-to-bottom {
+                            self.content-y = min(0px, self.visible-height - self.content-height);
+                        }
+                    }
+                    function report() {
+                        root.list-geometry(self.absolute-position.x, self.absolute-position.y, self.visible-width, self.visible-height, self.content-y);
+                    }
+                    init => {
+                        self.report();
+                    }
+                    changed content-y => {
+                        self.report();
+                    }
+                    changed visible-width => {
+                        self.report();
+                    }
+                    changed visible-height => {
+                        self.report();
+                    }
+                    changed absolute-position => {
+                        self.report();
+                    }
+                    for m in root.messages: VerticalLayout {
+                        padding: 6px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        Rectangle {
+                            background: m.is-user ? Palette.alternate-background : Palette.control-background;
+                            border-radius: 6px;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 6px;
+                                Text {
+                                    text: m.is-user ? "You" : "Assistant";
+                                    font-weight: 700;
+                                }
+                                if m.is-user: TextInput {
+                                    text: m.plain;
+                                    read-only: true;
+                                    single-line: false;
+                                    wrap: word-wrap;
+                                }
+                                for b in m.blocks: MarkdownBlock {
+                                    block: b;
+                                }
+                                if m.app-key != "" && !root.app-views-supported: Text {
+                                    text: "(MCP App views need X11 on Linux)";
+                                    color: Palette.foreground.transparentize(40%);
+                                }
+                                if m.app-key != "" && root.app-views-supported: Rectangle {
+                                    height: m.app-height;
+                                    border-width: 1px;
+                                    border-color: Palette.border;
+                                    border-radius: 6px;
+                                    function report() {
+                                        root.app-geometry(m.app-key, self.absolute-position.x, self.absolute-position.y, self.width, self.height, messages.content-y);
+                                    }
+                                    init => {
+                                        self.report();
+                                    }
+                                    changed absolute-position => {
+                                        self.report();
+                                    }
+                                    changed width => {
+                                        self.report();
+                                    }
+                                    changed height => {
+                                        self.report();
+                                    }
+                                }
+                                if m.error != "": Text {
+                                    text: "⚠ " + m.error;
+                                    color: #ef4444;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Palette.border;
+                }
+                HorizontalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+                    FocusScope {
+                        height: 80px;
+                        horizontal-stretch: 1;
+                        // Enter sends, Shift+Enter inserts a newline.
+                        capture-key-pressed(event) => {
+                            if event.text == Key.Return && !event.modifiers.shift {
+                                root.send();
+                                return accept;
+                            }
+                            reject
+                        }
+                        TextEdit {
+                            width: 100%;
+                            height: 100%;
+                            text <=> root.input-text;
+                            placeholder-text: "Message… (Enter to send, Shift+Enter for newline)";
+                            wrap: word-wrap;
+                        }
+                    }
+                    if !root.streaming: Button {
+                        width: 80px;
+                        text: "Send";
+                        primary: true;
+                        clicked => {
+                            root.send();
+                        }
+                    }
+                    if root.streaming: Button {
+                        width: 80px;
+                        text: "⏹ Stop";
+                        clicked => {
+                            root.stop();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,6 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = [
+  "apps/dioxus",
+  "apps/egui",
+  "apps/iced",
+  "apps/slint",
+  "apps/tauri/src-tauri",
+  "crates/*",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,11 +16,35 @@ license = "MIT"
 repository = "https://github.com/illumination-k/rust-desktop-chat-compare"
 
 [workspace.dependencies]
+app-webview = { path = "crates/app-webview" }
+chat-core = { path = "crates/chat-core" }
+directories = "6"
+fastrand = "2"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+keyring = "4"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+webbrowser = "1"
 
 [workspace.lints.clippy]
 print_stdout = "deny"
 print_stderr = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
+
+[profile.release]
+strip = true
+lto = "thin"
+
+# Five GUI stacks make full debug info huge (tens of GB); keep it for our crates only.
+[profile.dev.package."*"]
+debug = false
