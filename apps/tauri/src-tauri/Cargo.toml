@@ -11,7 +11,7 @@ description = "AI chat app built with Tauri v2"
 # which caps Tauri at 2.9. Tauri's internal crates must stay on matching minors,
 # so they are pinned here too (otherwise `cargo update` mixes incompatible ones).
 [build-dependencies]
-tauri-build = { version = "~2.5", features = [] }
+tauri-build = { version = "~2.6", features = [] }
 
 [dependencies]
 chat-core.workspace = true
@@ -21,7 +21,7 @@ tauri = { version = "~2.9", features = [] }
 tauri-codegen = "~2.5"
 tauri-macros = "~2.5"
 tauri-runtime = "~2.9"
-tauri-utils = "~2.8"
+tauri-utils = "~2.9"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
